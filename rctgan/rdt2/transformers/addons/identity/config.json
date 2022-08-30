@@ -1,0 +1,6 @@
+{
+    "name": "rdt2_identity",
+    "transformers": [
+        "rctgan.rdt2.transformers.addons.identity.identity.IdentityTransformer"
+    ]
+}
