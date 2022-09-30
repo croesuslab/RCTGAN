@@ -3,7 +3,7 @@
 import argparse
 
 from rctgan.ctganpc.data import read_csv, read_tsv, write_tsv
-from rctgan.ctganpc.synthesizers.ctgan import CTGANSynthesizer, PC_CTGANSynthesizer
+from rctgan.ctganpc.synthesizers.ctganpc import CTGANSynthesizer, PC_CTGANSynthesizer, TGANSynthesizer, PC_TGANSynthesizer
 
 
 def _parse_args():

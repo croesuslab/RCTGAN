@@ -1,10 +1,12 @@
 """Synthesizers module."""
 
-from rctgan.ctganpc.synthesizers.ctganpc import CTGANSynthesizer, PC_CTGANSynthesizer
+from rctgan.ctganpc.synthesizers.ctganpc import CTGANSynthesizer, PC_CTGANSynthesizer, TGANSynthesizer, PC_TGANSynthesizer
 
 __all__ = (
     'CTGANSynthesizer',
-    'PC_CTGANSynthesizer'
+    'PC_CTGANSynthesizer',
+    'TGANSynthesizer',
+    'PC_TGANSynthesizer'
 )
 
 

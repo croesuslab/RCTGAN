@@ -7,7 +7,7 @@ import warnings
 
 from rctgan.errors import NotFittedError
 from rctgan.relational.rctgan import RCTGAN
-from rctgan.tabular.ctganpc import CTGAN
+from rctgan.tabular.ctganpc import CTGAN, PC_CTGAN, TGAN, PC_TGAN
 
 class RCTGAN:
     """Automated generative modeling and sampling tool.
