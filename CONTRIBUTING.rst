@@ -175,11 +175,11 @@ The process of releasing a new version involves several steps combining both ``g
 ``bumpversion`` which, briefly:
 
 1. Merge what is in ``master`` branch into ``stable`` branch.
-2. Update the version in ``setup.cfg``, ``sdv/__init__.py`` and
+2. Update the version in ``setup.cfg``, ``rctgan/__init__.py`` and
    ``HISTORY.md`` files.
 3. Create a new git tag pointing at the corresponding commit in ``stable`` branch.
 4. Merge the new commit from ``stable`` into ``master``.
-5. Update the version in ``setup.cfg`` and ``sdv/__init__.py``
+5. Update the version in ``setup.cfg`` and ``rctgan/__init__.py``
    to open the next development iteration.
 
 .. note:: Before starting the process, make sure that ``HISTORY.md`` has been updated with a new
@@ -223,13 +223,13 @@ dependency specification, either in ``setup.py``::
 
     install_requires = [
         ...
-        'sdv>=X.Y.Z.dev',
+        'rctgan>=X.Y.Z.dev',
         ...
     ]
 
 or in command line::
 
-    pip install 'sdv>=X.Y.Z.dev'
+    pip install 'rctgan>=X.Y.Z.dev'
 
 
 .. _GitHub issues page: https://github.com/sdv-dev/SDV/issues
