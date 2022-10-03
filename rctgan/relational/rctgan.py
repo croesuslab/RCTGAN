@@ -9,13 +9,13 @@ from rctgan.rdt2.transformers.numerical import FloatFormatter
 from rctgan.rdt2.transformers.categorical import FrequencyEncoder
 from rctgan.rdt2.transformers.datetime import OptimizedTimestampEncoder
 import itertools
-from rctgan.tabular import CTGAN, PC_CTGAN
+from rctgan.tabular import CTGAN, PC_CTGAN, TGAN, PC_TGAN
 import pandas as pd
 import numpy as np
 import random
 
 class RCTGAN:
-    def __init__(self, metadata=None, hyperparam=None, current_table=None):
+    def __init__(self, metadata=None, hyperparam=None, current_table=None, model_PC='CTGAN'):
         self.metadata = metadata
         self.transformers = {}
         self.size_tables = {}
@@ -23,6 +23,7 @@ class RCTGAN:
         self.hyperparam = hyperparam
         self.default_hyperparam()
         self.current_table = current_table
+        self.model_PC = model_PC
     
     def default_hyperparam(self):
         default_hyp = {"embedding_dim": 128,
@@ -179,22 +180,38 @@ class RCTGAN:
             else:
                 prim_key = self.metadata.get_primary_key(table_name)
                 parents_trandformed = self.parents_input_add(table_name, tables)
-                
-                model = PC_CTGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
-                                 generator_dim=self.hyperparam[table_name]["generator_dim"], 
-                                 discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
-                                 generator_lr=self.hyperparam[table_name]["generator_lr"], 
-                                 generator_decay=self.hyperparam[table_name]["generator_decay"], 
-                                 discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
-                                 discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
-                                 batch_size=self.hyperparam[table_name]["batch_size"], 
-                                 discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
-                                 log_frequency=self.hyperparam[table_name]["log_frequency"], 
-                                 verbose=self.hyperparam[table_name]["verbose"], 
-                                 epochs=self.hyperparam[table_name]["epochs"], 
-                                 pac=self.hyperparam[table_name]["pac"], 
-                                 cuda=self.hyperparam[table_name]["cuda"],
-                                 alpha=self.hyperparam[table_name]["alpha"])
+                if self.model_PC=='TGAN':
+                    model = PC_TGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
+                                     generator_dim=self.hyperparam[table_name]["generator_dim"], 
+                                     discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
+                                     generator_lr=self.hyperparam[table_name]["generator_lr"], 
+                                     generator_decay=self.hyperparam[table_name]["generator_decay"], 
+                                     discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
+                                     discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
+                                     batch_size=self.hyperparam[table_name]["batch_size"], 
+                                     discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
+                                     log_frequency=self.hyperparam[table_name]["log_frequency"], 
+                                     verbose=self.hyperparam[table_name]["verbose"], 
+                                     epochs=self.hyperparam[table_name]["epochs"], 
+                                     pac=self.hyperparam[table_name]["pac"], 
+                                     cuda=self.hyperparam[table_name]["cuda"],
+                                     alpha=self.hyperparam[table_name]["alpha"])
+                else:
+                    model = PC_CTGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
+                                     generator_dim=self.hyperparam[table_name]["generator_dim"], 
+                                     discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
+                                     generator_lr=self.hyperparam[table_name]["generator_lr"], 
+                                     generator_decay=self.hyperparam[table_name]["generator_decay"], 
+                                     discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
+                                     discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
+                                     batch_size=self.hyperparam[table_name]["batch_size"], 
+                                     discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
+                                     log_frequency=self.hyperparam[table_name]["log_frequency"], 
+                                     verbose=self.hyperparam[table_name]["verbose"], 
+                                     epochs=self.hyperparam[table_name]["epochs"], 
+                                     pac=self.hyperparam[table_name]["pac"], 
+                                     cuda=self.hyperparam[table_name]["cuda"],
+                                     alpha=self.hyperparam[table_name]["alpha"])
                 
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
@@ -373,3 +390,4 @@ class RCTGAN:
                 if c[-7:] == '_nb_occ':
                     sampled_data[tab_name] = sampled_data[tab_name].drop([c], axis=1)
         return sampled_data
+

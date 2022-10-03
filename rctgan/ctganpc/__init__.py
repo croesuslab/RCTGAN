@@ -7,10 +7,12 @@ __email__ = 'dailabmit@gmail.com'
 __version__ = '0.5.1'
 
 from rctgan.ctganpc.demo import load_demo
-from rctgan.ctganpc.synthesizers.ctganpc import CTGANSynthesizer, PC_CTGANSynthesizer
+from rctgan.ctganpc.synthesizers.ctganpc import CTGANSynthesizer, PC_CTGANSynthesizer, TGANSynthesizer, PC_TGANSynthesizer
 
 __all__ = (
     'CTGANSynthesizer',
     'PC_CTGANSynthesizer',
+    'TGANSynthesizer',
+    'PC_TGANSynthesizer',
     'load_demo'
 )
