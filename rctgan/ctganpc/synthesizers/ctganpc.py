@@ -674,7 +674,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
 
     @random_state
     def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
-        print(self.alpha)
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:
@@ -1483,7 +1482,6 @@ class PC_TGANSynthesizer(BaseSynthesizer):
 
     @random_state
     def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
-        print(self.alpha)
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:

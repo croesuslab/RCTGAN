@@ -13,12 +13,14 @@ from rctgan.tabular import CTGAN, PC_CTGAN, TGAN, PC_TGAN
 import pandas as pd
 import numpy as np
 import random
+from scipy.stats import truncnorm, kstest
 
 class RCTGAN:
     def __init__(self, metadata=None, hyperparam=None, current_table=None, model_PC='CTGAN'):
         self.metadata = metadata
         self.transformers = {}
         self.size_tables = {}
+        self.size_stats = {}
         self.models = {}
         self.hyperparam = hyperparam
         self.default_hyperparam()
@@ -135,6 +137,7 @@ class RCTGAN:
             meta = self.metadata.get_table_meta(table_name)['fields']
             ht, col = self.rdt2_transform(meta, tables[table_name])
             self.transformers[table_name] = {"hypertr": ht, "columns": col}
+            self.size_stats[table_name] = {}
         for table_name in self.metadata.get_tables():
             self.current_table = table_name
             if len(self.metadata.get_parents(table_name)) == 0:
@@ -172,6 +175,11 @@ class RCTGAN:
                         mask = temp_table[child_name+"_"+foreign_key+"_nb_occ"].isna()
                         temp_table.loc[mask, child_name+"_"+foreign_key+"_nb_occ"] = 0
                         temp_table[child_name+"_"+foreign_key+"_nb_occ"] = temp_table[child_name+"_"+foreign_key+"_nb_occ"].astype(int)
+                        self.size_stats[table_name][child_name+"_"+foreign_key+"_nb_occ"] = {"min": np.min(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "max": np.max(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
+                                                                                            }
                     
                 model.fit(temp_table)
                 self.models[table_name] = model
@@ -232,6 +240,11 @@ class RCTGAN:
                             mask = temp_table[child_name+"_"+foreign_key+"_nb_occ"].isna()
                             temp_table.loc[mask, child_name+"_"+foreign_key+"_nb_occ"] = 0
                             temp_table[child_name+"_"+foreign_key+"_nb_occ"] = temp_table[child_name+"_"+foreign_key+"_nb_occ"].astype(int)
+                            self.size_stats[table_name][child_name+"_"+foreign_key+"_nb_occ"] = {"min": np.min(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "max": np.max(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
+                                                                                             "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
+                                                                                            }
                     temp_table = temp_table.drop([prim_key], axis=1)
                 else:
                     temp_table = tables[table_name][col_table]
@@ -264,19 +277,41 @@ class RCTGAN:
             
         
     
-    def parent_child_sample_mini(self, child, sampled_data, table_transformed, f_key_frame): # f_key_frame have columns _size_ and Parent_index
+    def parent_child_sample_mini(self, child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name): # f_key_frame have columns _size_ and Parent_index
+        std = self.size_stats[enc_parent][enc_nb_occ_name]["std"]
+        if std > 1:
+            std = 1
+            
+        rv = truncnorm(self.size_stats[enc_parent][enc_nb_occ_name]["min"],
+                       self.size_stats[enc_parent][enc_nb_occ_name]["max"], 
+                       loc=self.size_stats[enc_parent][enc_nb_occ_name]["mean"], 
+                       scale=self.size_stats[enc_parent][enc_nb_occ_name]["std"])
+        pvalue = kstest(np.array(f_key_frame["_size_"]), rv.cdf).pvalue
+        n = len(f_key_frame)
+        if pvalue < 0.01:
+            rv = truncnorm(self.size_stats[enc_parent][enc_nb_occ_name]["min"],
+                           self.size_stats[enc_parent][enc_nb_occ_name]["max"], 
+                           loc=self.size_stats[enc_parent][enc_nb_occ_name]["mean"], 
+                           scale=std)
+            size_rv = rv.rvs(size=n)
+            size_rv = np.round(size_rv, 0)
+            f_key_frame["_size_"] = np.array(size_rv).astype(int)
+            del size_rv
+
         sampled_data[child] = self.models[child].sample(list(f_key_frame["_size_"]), table_transformed)
+
         sampled_data[child] = sampled_data[child].merge(f_key_frame, 
                                                           on=["Parent_index"],
                                                           how='left', 
                                                           indicator=True)
         sampled_data[child] = sampled_data[child].drop(["_size_", "Parent_index", "_merge"], axis=1)
+
         prim_key = self.metadata.get_primary_key(child)
         if prim_key:
             if self.metadata.get_table_meta(child)['fields'][prim_key]['subtype']=='string':
                 sampled_data[child][prim_key] = self.generate_letter_id(len(sampled_data[child]))
             elif self.metadata.get_table_meta(child)['fields'][prim_key]['subtype']=='integer':
-                sampled_data[child][prim_key] = range(sampled_data[child])
+                sampled_data[child][prim_key] = range(1, len(sampled_data[child])+1)
         
     
     def granp_parent_transform_add(self, parent_name, table_transformed, f_key, f_key_frame, sampled_data, tables_transformed):
@@ -323,12 +358,13 @@ class RCTGAN:
         if all_parents_sampled:
             enc_parent = parents_name[0]
             enc_foreign_key = list(self.metadata.get_foreign_keys(enc_parent, child))[0]
+            enc_nb_occ_name = child+"_"+enc_foreign_key+"_nb_occ"
             
             table_transformed = tables_transformed[enc_parent].copy()
             table_transformed.columns = ["var_"+str(i+1) for i in range(len(table_transformed.columns))]
             
             prim_enc = self.metadata.get_primary_key(enc_parent)
-            f_key_frame = pd.DataFrame(sampled_data[enc_parent][[prim_enc, child+"_"+enc_foreign_key+"_nb_occ"]])
+            f_key_frame = pd.DataFrame(sampled_data[enc_parent][[prim_enc, enc_nb_occ_name]])
             f_key_frame.columns = [enc_foreign_key, "_size_"]
             f_key_frame["Parent_index"] = list(f_key_frame.index)
             
@@ -336,7 +372,7 @@ class RCTGAN:
                 table_transformed = self.granp_parent_transform_add(enc_parent, table_transformed, enc_foreign_key, f_key_frame, sampled_data, tables_transformed)
             
             if len(parents_name)==1 and len(list(self.metadata.get_foreign_keys(enc_parent, child)))==1:
-                self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame)
+                self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name)
             else:
                 for parent_name in parents_name:
                     foreign_keys = list(self.metadata.get_foreign_keys(parent_name, child))
@@ -354,7 +390,7 @@ class RCTGAN:
                         f_key_frame[foreign_key] = list(sampled_data[parent_name].filter(items=indexes_choosen, axis=0)[prim_key])
                         if self.hyperparam[child]["grand_parent"]:
                             table_transformed = self.granp_parent_transform_add(parent_name, table_transformed, foreign_key, f_key_frame, sampled_data, tables_transformed)
-                self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame)
+                self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name)
             
         children = list(self.metadata.get_children(child))
         if len(children)>0:
