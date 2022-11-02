@@ -13,6 +13,8 @@ from rctgan.ctganpc.data_sampler import DataSampler, pc_DataSampler
 from rctgan.ctganpc.data_transformer import DataTransformer
 from rctgan.ctganpc.synthesizers.base import BaseSynthesizer, random_state
 
+import matplotlib.pyplot as plt
+
 
 class Discriminator(Module):
     """Discriminator for the CTGANSynthesizer."""
@@ -144,7 +146,7 @@ class CTGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
 
         assert batch_size % 2 == 0
 
@@ -163,6 +165,8 @@ class CTGANSynthesizer(BaseSynthesizer):
         self._verbose = verbose
         self._epochs = epochs
         self.pac = pac
+
+        self.plot_loss = plot_loss
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -279,6 +283,14 @@ class CTGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
+    def draw_curve(self, current_epoch):
+        x_epoch = range(current_epoch+1)
+        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
+        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
+        if current_epoch == 0:
+            self.ax_g.legend()
+            self.ax_d.legend()
+
     @random_state
     def fit(self, train_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -292,6 +304,15 @@ class CTGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
+        if self.plot_loss:
+            self.lossg_list = []
+            self.lossd_list = []
+            self.fig = plt.figure()
+            self.ax_g = self.fig.add_subplot(121, title="loss generator")
+            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
+            self.fig.set_figwidth(16)
+            self.fig.set_figheight(5)
+
         self._validate_discrete_columns(train_data, discrete_columns)
 
         if epochs is None:
@@ -421,6 +442,12 @@ class CTGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
+            if self.plot_loss:
+                self.lossg_list.append(loss_g.detach().cpu())
+                self.lossd_list.append(loss_d.detach().cpu())
+                self.draw_curve(i)
+        if self.plot_loss:
+            plt.show()
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):
@@ -536,7 +563,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, alpha=0.9):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, if_cond_discrim=False):
 
         assert batch_size % 2 == 0
 
@@ -556,19 +583,23 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self._epochs = epochs
         self.pac = pac
 
+        self.plot_loss = plot_loss
+
+        self.if_cond_discrim = if_cond_discrim
+
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
         elif isinstance(cuda, str):
             device = cuda
         else:
             device = 'cuda'
+        
 
         self._device = torch.device(device)
 
         self._transformer = None
         self._data_sampler = None
         self._generator = None
-        self.alpha = alpha
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -672,6 +703,14 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
+    def draw_curve(self, current_epoch):
+        x_epoch = range(current_epoch+1)
+        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
+        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
+        if current_epoch == 0:
+            self.ax_g.legend()
+            self.ax_d.legend()
+
     @random_state
     def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -685,6 +724,16 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
+
+        if self.plot_loss:
+            self.lossg_list = []
+            self.lossd_list = []
+            self.fig = plt.figure()
+            self.ax_g = self.fig.add_subplot(121, title="loss generator")
+            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
+            self.fig.set_figwidth(16)
+            self.fig.set_figheight(5)
+
         self._validate_discrete_columns(train_data, discrete_columns)
 
         if epochs is None:
@@ -717,12 +766,18 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             data_dim + data_dim_pc # ----------------------------------------
         ).to(self._device)
 
-        discriminator = Discriminator(
-            # data_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
-            data_dim + self._data_sampler.dim_cond_vec(),
-            self._discriminator_dim,
-            pac=self.pac
-        ).to(self._device)
+        if self.if_cond_discrim:
+            discriminator = Discriminator(
+                data_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
+                self._discriminator_dim,
+                pac=self.pac
+            ).to(self._device)
+        else:
+            discriminator = Discriminator(
+                data_dim + self._data_sampler.dim_cond_vec(),
+                self._discriminator_dim,
+                pac=self.pac
+            ).to(self._device)
 
         optimizerG = optim.Adam(
             self._generator.parameters(), lr=self._generator_lr, betas=(0.5, 0.9),
@@ -777,8 +832,9 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                         real_cat = real
                         fake_cat = fakeact
                     
-                    # fake_cat = torch.cat([fake_cat, real_parent], 1)
-                    # real_cat = torch.cat([real_cat, real_parent], 1)
+                    if self.if_cond_discrim:
+                        fake_cat = torch.cat([fake_cat, real_parent], 1)
+                        real_cat = torch.cat([real_cat, real_parent], 1)
 
                     y_fake = discriminator(fake_cat)
                     y_real = discriminator(real_cat)
@@ -811,24 +867,23 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 fakeact = self._apply_activate(fake)
 
                 if c1 is not None:
-                    # y_fake = discriminator(torch.cat([fakeact, c1, real_parent], dim=1))
-                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
+                    if self.if_cond_discrim:
+                        y_fake = discriminator(torch.cat([fakeact, c1, real_parent], dim=1))
+                    else:
+                        y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
                 else:
-                    y_fake = discriminator(fakeact)
+                    if self.if_cond_discrim:
+                        y_fake = discriminator(torch.cat([fakeact, real_parent], dim=1))
+                    else:
+                        y_fake = discriminator(fakeact)
 
                 if condvec is None:
                     cross_entropy = 0
-                    cross_entropy_parent = 0
                 else:
                     cross_entropy = self._cond_loss(fake, c1, m1)
-                    cross_entropy_parent = self._cond_loss(fake_parent, c1, m1)
                 
-
-                # loss_g = self.alpha*(-torch.mean(y_fake) + cross_entropy) + (1-self.alpha)*cross_entropy_parent
-                loss_g = -torch.mean(y_fake) + self.alpha*cross_entropy + (1-self.alpha)*cross_entropy_parent
-                # print("Rapport", (-torch.mean(y_fake) + cross_entropy)/(cross_entropy_parent+1e-16))
+                loss_g = -torch.mean(y_fake) + cross_entropy
                 
-
                 optimizerG.zero_grad()
                 loss_g.backward()
                 optimizerG.step()
@@ -837,6 +892,13 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
+            
+            if self.plot_loss:
+                self.lossg_list.append(loss_g.detach().cpu())
+                self.lossd_list.append(loss_d.detach().cpu())
+                self.draw_curve(i)
+        if self.plot_loss:
+            plt.show()
 
     @random_state
     def sample(self, sizes, parent_data, condition_column=None, condition_value=None):
@@ -972,7 +1034,7 @@ class TGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
 
         assert batch_size % 2 == 0
 
@@ -991,6 +1053,8 @@ class TGANSynthesizer(BaseSynthesizer):
         self._verbose = verbose
         self._epochs = epochs
         self.pac = pac
+
+        self.plot_loss = plot_loss
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -1107,6 +1171,14 @@ class TGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
+    def draw_curve(self, current_epoch):
+        x_epoch = range(current_epoch+1)
+        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
+        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
+        if current_epoch == 0:
+            self.ax_g.legend()
+            self.ax_d.legend()
+
     @random_state
     def fit(self, train_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -1120,6 +1192,15 @@ class TGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
+        if self.plot_loss:
+            self.lossg_list = []
+            self.lossd_list = []
+            self.fig = plt.figure()
+            self.ax_g = self.fig.add_subplot(121, title="loss generator")
+            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
+            self.fig.set_figwidth(16)
+            self.fig.set_figheight(5)
+
         self._validate_discrete_columns(train_data, discrete_columns)
 
         if epochs is None:
@@ -1249,6 +1330,13 @@ class TGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
+            
+            if self.plot_loss:
+                self.lossg_list.append(loss_g.detach().cpu())
+                self.lossd_list.append(loss_d.detach().cpu())
+                self.draw_curve(i)
+        if self.plot_loss:
+            plt.show()
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):
@@ -1344,7 +1432,7 @@ class PC_TGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, alpha=0.9):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
 
         assert batch_size % 2 == 0
 
@@ -1364,6 +1452,8 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         self._epochs = epochs
         self.pac = pac
 
+        self.plot_loss = plot_loss
+
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
         elif isinstance(cuda, str):
@@ -1376,7 +1466,6 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
-        self.alpha = alpha
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -1480,6 +1569,14 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
+    def draw_curve(self, current_epoch):
+        x_epoch = range(current_epoch+1)
+        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
+        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
+        if current_epoch == 0:
+            self.ax_g.legend()
+            self.ax_d.legend()
+
     @random_state
     def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -1493,6 +1590,15 @@ class PC_TGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
+        if self.plot_loss:
+            self.lossg_list = []
+            self.lossd_list = []
+            self.fig = plt.figure()
+            self.ax_g = self.fig.add_subplot(121, title="loss generator")
+            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
+            self.fig.set_figwidth(16)
+            self.fig.set_figheight(5)
+
         self._validate_discrete_columns(train_data, discrete_columns)
 
         if epochs is None:
@@ -1626,18 +1732,10 @@ class PC_TGANSynthesizer(BaseSynthesizer):
                 
                 if condvec is None:
                     cross_entropy = 0
-                   # cross_entropy_parent = 0
                 else:
                     cross_entropy = self._cond_loss(fake, c1, m1)
-                    # cross_entropy_parent = self._cond_loss(fake_parent, c1, m1)
-                
-
-                # loss_g = self.alpha*(-torch.mean(y_fake) + cross_entropy) + (1-self.alpha)*cross_entropy_parent
-                # loss_g = -torch.mean(y_fake) + self.alpha*cross_entropy + (1-self.alpha)*cross_entropy_parent
                 
                 loss_g = -torch.mean(y_fake) + cross_entropy
-                
-                # print('mean(y_fake): '+str(torch.mean(y_fake))+' --crossentropy : '+str(cross_entropy)+' -- Parent crossentropy : '+str(cross_entropy_parent))
 
                 optimizerG.zero_grad()
                 loss_g.backward()
@@ -1647,6 +1745,13 @@ class PC_TGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
+            
+            if self.plot_loss:
+                self.lossg_list.append(loss_g.detach().cpu())
+                self.lossd_list.append(loss_d.detach().cpu())
+                self.draw_curve(i)
+        if self.plot_loss:
+            plt.show()
 
     @random_state
     def sample(self, sizes, parent_data, condition_column=None, condition_value=None):

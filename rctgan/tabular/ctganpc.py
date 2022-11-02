@@ -199,7 +199,7 @@ class CTGAN(CTGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -228,7 +228,8 @@ class CTGAN(CTGANModel):
             'verbose': verbose,
             'epochs': epochs,
             'pac': pac,
-            'cuda': cuda
+            'cuda': cuda,
+            'plot_loss': plot_loss
         }
         
 
@@ -451,7 +452,7 @@ class PC_CTGAN(PC_CTGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, alpha=0.9,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, if_cond_discrim=False,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -481,7 +482,8 @@ class PC_CTGAN(PC_CTGANModel):
             'epochs': epochs,
             'pac': pac,
             'cuda': cuda,
-            'alpha': alpha
+            'plot_loss': plot_loss,
+            'if_cond_discrim': if_cond_discrim
         }
 
 class TGANModel(BaseTabularModel):
@@ -563,7 +565,7 @@ class TGAN(TGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -592,7 +594,8 @@ class TGAN(TGANModel):
             'verbose': verbose,
             'epochs': epochs,
             'pac': pac,
-            'cuda': cuda
+            'cuda': cuda,
+            'plot_loss': plot_loss
         }
         
         
@@ -814,7 +817,7 @@ class PC_TGAN(PC_TGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, alpha=0.9,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -844,5 +847,5 @@ class PC_TGAN(PC_TGANModel):
             'epochs': epochs,
             'pac': pac,
             'cuda': cuda,
-            'alpha': alpha
+            'plot_loss': plot_loss
         }
