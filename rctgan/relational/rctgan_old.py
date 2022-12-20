@@ -18,7 +18,7 @@ import sys
 
 class RCTGAN:
     def __init__(self, metadata=None, hyperparam=None, current_table=None,
-                 model_PC='CTGAN', ohe_for_parent=False, if_gaussian_ht=True, num_transformers='gaussian', seed=None):
+                 model_PC='CTGAN', ohe_for_parent=False, num_transformers='gaussian', seed=None):
         self.metadata = metadata
         self.transformers = {}
         self.transformers_for_deleted_f = {}
@@ -30,13 +30,7 @@ class RCTGAN:
         self.current_table = current_table
         self.model_PC = model_PC
         self.ohe_for_parent = ohe_for_parent
-        self.if_gaussian_ht = if_gaussian_ht
-        if self.if_gaussian_ht==False:
-            self.num_transformers = num_transformers
-        elif num_transformers=='gaussian':
-            self.num_transformers = 'float'
-        else:
-            self.num_transformers = num_transformers
+        self.num_transformers = num_transformers
         self.seed = seed
     
     def default_hyperparam(self):
@@ -51,11 +45,12 @@ class RCTGAN:
                        "discriminator_steps": 1,
                        "log_frequency": True,
                        "verbose": False,
-                       "epochs": 1000,
+                       "epochs": 300,
                        "pac": 10,
                        "cuda": True,
+                       "plot_loss": False,
                        "if_cond_discrim": False,
-                       "grand_parent": True,
+                       "grand_parent": False,
                        "parent_features_to_delete": {}
                       }
         if self.hyperparam==None:
@@ -115,23 +110,6 @@ class RCTGAN:
         ht.fit(table[col_retained])
         return ht, col_retained
     
-    def gaussian_ht(self, table_transormed):
-        ht = HyperTransformer()
-        config_dict = {"sdtypes": {}, "transformers": {}}
-        for col in table_transormed.columns:
-            config_dict["sdtypes"][col] =  'numerical'
-            config_dict["transformers"][col] =  GaussianNormalizer()
-        ht.set_config(config=config_dict)
-        ht.fit(table_transormed)
-        return ht
-    
-    def transform(self, table_name, table):
-        col = self.transformers[table_name]["columns"]
-        if self.if_gaussian_ht==False:
-            return self.transformers[table_name]['hypertr'].transform(table[col])
-        else:
-            return  self.transformers[table_name]['gaussian_ht'].transform(self.transformers[table_name]['hypertr'].transform(table[col]))
-
     def keep_data_col(self, meta_fields):
         col_retained = []
         for field in meta_fields.keys():
@@ -166,8 +144,7 @@ class RCTGAN:
                 col = self.transformers[parent_name]["columns"]
 
             for foreign_key in foreign_keys:
-                # parent_trandformed = ht.transform(tables[parent_name][col])
-                parent_trandformed = self.transform(parent_name, tables[parent_name])
+                parent_trandformed = ht.transform(tables[parent_name][col])
                 parent_trandformed.columns = ["var_"+str(i) for i in range(1, len(parent_trandformed.columns)+1)]
                 if self.hyperparam[self.current_table]["grand_parent"]:
                     if parent_name in list(self.metadata.get_parents(self.current_table)):
@@ -202,13 +179,6 @@ class RCTGAN:
                 meta = self.metadata.get_table_meta(table_name)['fields']
                 ht, col = self.rdt2_transform(meta, tables[table_name])
                 self.transformers[table_name] = {"hypertr": ht, "columns": col}
-                del ht
-                del col
-                if self.if_gaussian_ht:
-                    ht = self.transformers[table_name]['hypertr']
-                    col = self.transformers[table_name]['columns']
-                    self.transformers[table_name]['gaussian_ht'] = self.gaussian_ht(ht.transform(tables[table_name][col]))
-
                 self.size_stats[table_name] = {}
                 if len(self.hyperparam[table_name]["parent_features_to_delete"].keys()) > 0:
                     self.transformers_for_deleted_f[table_name] = {}
@@ -244,6 +214,7 @@ class RCTGAN:
                               epochs=self.hyperparam[table_name]["epochs"], 
                               pac=self.hyperparam[table_name]["pac"], 
                               cuda=self.hyperparam[table_name]["cuda"],
+                              plot_loss=self.hyperparam[table_name]["plot_loss"],
                               seed=self.seed)
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
@@ -274,6 +245,8 @@ class RCTGAN:
                                                                                              "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
                                                                                              "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
                                                                                             }
+                if self.hyperparam[table_name]["plot_loss"]==True:
+                    print("plot of table: "+table_name)
 
                 model.fit(temp_table)
                 self.models[table_name] = model
@@ -297,6 +270,7 @@ class RCTGAN:
                                      epochs=self.hyperparam[table_name]["epochs"], 
                                      pac=self.hyperparam[table_name]["pac"], 
                                      cuda=self.hyperparam[table_name]["cuda"],
+                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
                                      # if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
                                      seed=self.seed)
                 else:
@@ -314,6 +288,7 @@ class RCTGAN:
                                      epochs=self.hyperparam[table_name]["epochs"], 
                                      pac=self.hyperparam[table_name]["pac"], 
                                      cuda=self.hyperparam[table_name]["cuda"],
+                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
                                      if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
                                      seed=self.seed)
                     
@@ -350,6 +325,8 @@ class RCTGAN:
                     temp_table = temp_table.drop([prim_key], axis=1)
                 else:
                     temp_table = tables[table_name][col_table]
+                if self.hyperparam[table_name]["plot_loss"]==True:
+                    print("plot of table: "+table_name)
 
                 model.fit(temp_table, parents_trandformed)
                 self.models[table_name] = model
@@ -472,10 +449,9 @@ class RCTGAN:
                     del table_transformed
             else:
                 if if_restricted_trans_mod[parent_name]:
-                    # ht = self.transformers[parent_name]["hypertr"]
-                    # col = self.transformers[parent_name]["columns"]
-                    # table_transformed = ht.transform(sampled_data[parent_name][col])
-                    table_transformed = self.transform(parent_name, sampled_data[parent_name])
+                    ht = self.transformers[parent_name]["hypertr"]
+                    col = self.transformers[parent_name]["columns"]
+                    table_transformed = ht.transform(sampled_data[parent_name][col])
                     tables_transformed[parent_name] = table_transformed.copy()
                     if_restricted_trans_mod[parent_name] = False
                     del table_transformed
@@ -519,10 +495,9 @@ class RCTGAN:
             
         children = list(self.metadata.get_children(child))
         if len(children)>0:
-            # ht = self.transformers[child]["hypertr"]
-            # col = self.transformers[child]["columns"]
-            # table_transformed = ht.transform(sampled_data[child][col])
-            table_transformed = self.transform(child, sampled_data[child])
+            ht = self.transformers[child]["hypertr"]
+            col = self.transformers[child]["columns"]
+            table_transformed = ht.transform(sampled_data[child][col])
             tables_transformed[child] = table_transformed.copy()
             if_restricted_trans_mod[child] = False
             del table_transformed
@@ -552,10 +527,9 @@ class RCTGAN:
                 sampled_data[table_name] = self.models[table_name].sample(n_table)
                 children = list(self.metadata.get_children(table_name))
                 if len(children)>0:
-                    # ht = self.transformers[table_name]["hypertr"]
-                    # col = self.transformers[table_name]["columns"]
-                    # table_transformed = ht.transform(sampled_data[table_name][col])
-                    table_transformed = self.transform(table_name, sampled_data[table_name])
+                    ht = self.transformers[table_name]["hypertr"]
+                    col = self.transformers[table_name]["columns"]
+                    table_transformed = ht.transform(sampled_data[table_name][col])
                     tables_transformed[table_name] = table_transformed.copy()
                     if_restricted_trans_mod[table_name] = False
                     del table_transformed

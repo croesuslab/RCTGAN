@@ -13,9 +13,6 @@ from rctgan.ctganpc.data_sampler import DataSampler, pc_DataSampler
 from rctgan.ctganpc.data_transformer import DataTransformer
 from rctgan.ctganpc.synthesizers.base import BaseSynthesizer, random_state
 
-import matplotlib.pyplot as plt
-
-
 class Discriminator(Module):
     """Discriminator for the CTGANSynthesizer."""
 
@@ -146,7 +143,7 @@ class CTGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -166,8 +163,6 @@ class CTGANSynthesizer(BaseSynthesizer):
         self._epochs = epochs
         self.pac = pac
 
-        self.plot_loss = plot_loss
-
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
         elif isinstance(cuda, str):
@@ -180,6 +175,8 @@ class CTGANSynthesizer(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
+
+        self.seed = seed
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -283,14 +280,6 @@ class CTGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
-    def draw_curve(self, current_epoch):
-        x_epoch = range(current_epoch+1)
-        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
-        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
-        if current_epoch == 0:
-            self.ax_g.legend()
-            self.ax_d.legend()
-
     @random_state
     def fit(self, train_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -304,14 +293,6 @@ class CTGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
-        if self.plot_loss:
-            self.lossg_list = []
-            self.lossd_list = []
-            self.fig = plt.figure()
-            self.ax_g = self.fig.add_subplot(121, title="loss generator")
-            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
-            self.fig.set_figwidth(16)
-            self.fig.set_figheight(5)
 
         self._validate_discrete_columns(train_data, discrete_columns)
 
@@ -360,7 +341,9 @@ class CTGANSynthesizer(BaseSynthesizer):
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
-
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
@@ -442,12 +425,6 @@ class CTGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
-            if self.plot_loss:
-                self.lossg_list.append(loss_g.detach().cpu())
-                self.lossd_list.append(loss_d.detach().cpu())
-                self.draw_curve(i)
-        if self.plot_loss:
-            plt.show()
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):
@@ -468,6 +445,9 @@ class CTGANSynthesizer(BaseSynthesizer):
         Returns:
             numpy.ndarray or pandas.DataFrame
         """
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
         if condition_column is not None and condition_value is not None:
             condition_info = self._transformer.convert_column_name_value_to_id(
                 condition_column, condition_value)
@@ -563,7 +543,8 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, if_cond_discrim=False):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
+                 if_cond_discrim=False, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -583,8 +564,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self._epochs = epochs
         self.pac = pac
 
-        self.plot_loss = plot_loss
-
         self.if_cond_discrim = if_cond_discrim
 
         if not cuda or not torch.cuda.is_available():
@@ -600,6 +579,8 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
+
+        self.seed = seed
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -703,14 +684,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         if invalid_columns:
             raise ValueError(f'Invalid columns found: {invalid_columns}')
 
-    def draw_curve(self, current_epoch):
-        x_epoch = range(current_epoch+1)
-        self.ax_g.plot(x_epoch, self.lossg_list, 'b', label='loss generator')
-        self.ax_d.plot(x_epoch, self.lossd_list, 'r', label='loss discriminator')
-        if current_epoch == 0:
-            self.ax_g.legend()
-            self.ax_d.legend()
-
     @random_state
     def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
@@ -724,15 +697,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 contain the integer indices of the columns. Otherwise, if it is
                 a ``pandas.DataFrame``, this list should contain the column names.
         """
-
-        if self.plot_loss:
-            self.lossg_list = []
-            self.lossd_list = []
-            self.fig = plt.figure()
-            self.ax_g = self.fig.add_subplot(121, title="loss generator")
-            self.ax_d = self.fig.add_subplot(122, title="loss discriminator")
-            self.fig.set_figwidth(16)
-            self.fig.set_figheight(5)
 
         self._validate_discrete_columns(train_data, discrete_columns)
 
@@ -791,7 +755,9 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
-
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
@@ -892,13 +858,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
-            
-            if self.plot_loss:
-                self.lossg_list.append(loss_g.detach().cpu())
-                self.lossd_list.append(loss_d.detach().cpu())
-                self.draw_curve(i)
-        if self.plot_loss:
-            plt.show()
 
     @random_state
     def sample(self, sizes, parent_data, condition_column=None, condition_value=None):
@@ -919,6 +878,10 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         Returns:
             numpy.ndarray or pandas.DataFrame
         """
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+
         if len(parent_data)!=len(sizes):
             return None
         
@@ -1034,7 +997,8 @@ class TGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
+                 plot_loss=False, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -1068,6 +1032,8 @@ class TGANSynthesizer(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
+
+        self.seed = seed
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -1249,6 +1215,10 @@ class TGANSynthesizer(BaseSynthesizer):
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
 
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
@@ -1357,6 +1327,9 @@ class TGANSynthesizer(BaseSynthesizer):
         Returns:
             numpy.ndarray or pandas.DataFrame
         """
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
 
         steps = n // self._batch_size + 1
         data = []
@@ -1432,7 +1405,8 @@ class PC_TGANSynthesizer(BaseSynthesizer):
     def __init__(self, embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False):
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
+                 plot_loss=False, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -1466,6 +1440,8 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
+
+        self.seed = seed
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -1651,6 +1627,10 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
 
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
@@ -1772,6 +1752,10 @@ class PC_TGANSynthesizer(BaseSynthesizer):
         Returns:
             numpy.ndarray or pandas.DataFrame
         """
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+
         if len(parent_data)!=len(sizes):
             return None
         

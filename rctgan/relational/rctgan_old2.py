@@ -51,11 +51,12 @@ class RCTGAN:
                        "discriminator_steps": 1,
                        "log_frequency": True,
                        "verbose": False,
-                       "epochs": 1000,
+                       "epochs": 300,
                        "pac": 10,
                        "cuda": True,
+                       "plot_loss": False,
                        "if_cond_discrim": False,
-                       "grand_parent": True,
+                       "grand_parent": False,
                        "parent_features_to_delete": {}
                       }
         if self.hyperparam==None:
@@ -244,6 +245,7 @@ class RCTGAN:
                               epochs=self.hyperparam[table_name]["epochs"], 
                               pac=self.hyperparam[table_name]["pac"], 
                               cuda=self.hyperparam[table_name]["cuda"],
+                              plot_loss=self.hyperparam[table_name]["plot_loss"],
                               seed=self.seed)
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
@@ -274,6 +276,8 @@ class RCTGAN:
                                                                                              "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
                                                                                              "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
                                                                                             }
+                if self.hyperparam[table_name]["plot_loss"]==True:
+                    print("plot of table: "+table_name)
 
                 model.fit(temp_table)
                 self.models[table_name] = model
@@ -297,6 +301,7 @@ class RCTGAN:
                                      epochs=self.hyperparam[table_name]["epochs"], 
                                      pac=self.hyperparam[table_name]["pac"], 
                                      cuda=self.hyperparam[table_name]["cuda"],
+                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
                                      # if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
                                      seed=self.seed)
                 else:
@@ -314,6 +319,7 @@ class RCTGAN:
                                      epochs=self.hyperparam[table_name]["epochs"], 
                                      pac=self.hyperparam[table_name]["pac"], 
                                      cuda=self.hyperparam[table_name]["cuda"],
+                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
                                      if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
                                      seed=self.seed)
                     
@@ -350,6 +356,8 @@ class RCTGAN:
                     temp_table = temp_table.drop([prim_key], axis=1)
                 else:
                     temp_table = tables[table_name][col_table]
+                if self.hyperparam[table_name]["plot_loss"]==True:
+                    print("plot of table: "+table_name)
 
                 model.fit(temp_table, parents_trandformed)
                 self.models[table_name] = model
