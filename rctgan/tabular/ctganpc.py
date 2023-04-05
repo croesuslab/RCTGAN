@@ -198,7 +198,11 @@ class CTGAN(CTGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
+<<<<<<< HEAD
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
+=======
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, seed=None,
+>>>>>>> ab1fdf96ae9241eaff86dae137f90e7af1d44b05
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -228,7 +232,10 @@ class CTGAN(CTGANModel):
             'epochs': epochs,
             'pac': pac,
             'cuda': cuda,
+<<<<<<< HEAD
             'plot_loss': plot_loss,
+=======
+>>>>>>> ab1fdf96ae9241eaff86dae137f90e7af1d44b05
             'seed': seed
         }
         
@@ -452,7 +459,130 @@ class PC_CTGAN(PC_CTGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
+<<<<<<< HEAD
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, if_cond_discrim=False, seed=None,
+=======
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, if_cond_discrim=False, seed=None,
+>>>>>>> ab1fdf96ae9241eaff86dae137f90e7af1d44b05
+                 rounding='auto', min_value='auto', max_value='auto'):
+        super().__init__(
+            field_names=field_names,
+            primary_key=primary_key,
+            field_types=field_types,
+            field_transformers=field_transformers,
+            anonymize_fields=anonymize_fields,
+            constraints=constraints,
+            table_metadata=table_metadata,
+            rounding=rounding,
+            max_value=max_value,
+            min_value=min_value
+        )
+
+        self._model_kwargs = {
+            'embedding_dim': embedding_dim,
+            'generator_dim': generator_dim,
+            'discriminator_dim': discriminator_dim,
+            'generator_lr': generator_lr,
+            'generator_decay': generator_decay,
+            'discriminator_lr': discriminator_lr,
+            'discriminator_decay': discriminator_decay,
+            'batch_size': batch_size,
+            'discriminator_steps': discriminator_steps,
+            'log_frequency': log_frequency,
+            'verbose': verbose,
+            'epochs': epochs,
+            'pac': pac,
+            'cuda': cuda,
+<<<<<<< HEAD
+            'plot_loss': plot_loss,
+            'if_cond_discrim': if_cond_discrim,
+            'seed': seed
+        }
+=======
+            'if_cond_discrim': if_cond_discrim,
+            'seed': seed
+        }
+
+class TGANModel(BaseTabularModel):
+    """Base class for all the CTGAN models.
+
+    The ``CTGANModel`` class provides a wrapper for all the CTGAN models.
+    """
+
+    _MODEL_CLASS = None
+    _model_kwargs = None
+
+    _DTYPE_TRANSFORMERS = {
+        'O': None
+    }
+
+    def _build_model(self):
+        return self._MODEL_CLASS(**self._model_kwargs)
+
+    def _fit(self, table_data):
+        """Fit the model to the table.
+
+        Args:
+            table_data (pandas.DataFrame):
+                Data to be learned.
+        """
+        self._model = self._build_model()
+
+        categoricals = []
+        fields_before_transform = self._metadata.get_fields()
+        for field in table_data.columns:
+            if field in fields_before_transform:
+                meta = fields_before_transform[field]
+                if meta['type'] == 'categorical':
+                    categoricals.append(field)
+
+            else:
+                field_data = table_data[field].dropna()
+                if set(field_data.unique()) == {0.0, 1.0}:
+                    # booleans encoded as float values must be modeled as bool
+                    field_data = field_data.astype(bool)
+
+                dtype = field_data.infer_objects().dtype
+                try:
+                    kind = np.dtype(dtype).kind
+                except TypeError:
+                    # probably category
+                    kind = 'O'
+                if kind in ['O', 'b']:
+                    categoricals.append(field)
+
+        self._model.fit(
+            table_data,
+            discrete_columns=categoricals
+        )
+
+    def _sample(self, num_rows, conditions=None):
+        if conditions is None:
+            return self._model.sample(num_rows)
+
+        raise NotImplementedError(f"{self._MODEL_CLASS} doesn't support conditional sampling.")
+
+    def _set_random_state(self, random_state):
+        """Set the random state of the model's random number generator.
+
+        Args:
+            random_state (int, tuple[np.random.RandomState, torch.Generator], or None):
+                Seed or tuple of random states to use.
+        """
+        self._model.set_random_state(random_state)
+
+
+class TGAN(TGANModel):
+    
+
+    _MODEL_CLASS = TGANSynthesizer
+
+    def __init__(self, field_names=None, field_types=None, field_transformers=None,
+                 anonymize_fields=None, primary_key=None, constraints=None, table_metadata=None,
+                 embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
+                 generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
+                 discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -483,6 +613,259 @@ class PC_CTGAN(PC_CTGANModel):
             'pac': pac,
             'cuda': cuda,
             'plot_loss': plot_loss,
-            'if_cond_discrim': if_cond_discrim,
             'seed': seed
         }
+        
+        
+class PC_TGANModel(BaseTabularModel):
+    """Base class for all the CTGAN models.
+
+    The ``CTGANModel`` class provides a wrapper for all the CTGAN models.
+    """
+
+    _MODEL_CLASS = None
+    _model_kwargs = None
+
+    _DTYPE_TRANSFORMERS = {
+        'O': None
+    }
+    
+    _metadata_pc = None
+    
+    _type_dict = {}
+
+    def _build_model(self):
+        return self._MODEL_CLASS(**self._model_kwargs)
+
+    def _fit(self, table_data, parent_data):
+        """Fit the model to the table.
+
+        Args:
+            table_data (pandas.DataFrame):
+                Data to be learned.
+        """
+        self._model = self._build_model()
+
+        categoricals = []
+        fields_before_transform = self._metadata.get_fields()
+        for field in table_data.columns:
+            if field in fields_before_transform:
+                meta = fields_before_transform[field]
+                if meta['type'] == 'categorical':
+                    categoricals.append(field)
+
+            else:
+                field_data = table_data[field].dropna()
+                if set(field_data.unique()) == {0.0, 1.0}:
+                    # booleans encoded as float values must be modeled as bool
+                    field_data = field_data.astype(bool)
+
+                dtype = field_data.infer_objects().dtype
+                try:
+                    kind = np.dtype(dtype).kind
+                except TypeError:
+                    # probably category
+                    kind = 'O'
+                if kind in ['O', 'b']:
+                    categoricals.append(field)
+        self._type_dict = dict(table_data.dtypes)
+        
+        self._model.fit(
+            table_data,
+            parent_data,
+            discrete_columns=categoricals
+        )
+        
+    def fit(self, data, parent_data, field_names_pc=None, field_types_pc=None, field_transformers_pc=None,
+                 anonymize_fields_pc=None, primary_key_pc=None, constraints_pc=None, table_metadata_pc=None,
+                 rounding_pc='auto', min_value_pc='auto', max_value_pc='auto'):
+        if isinstance(data, pd.DataFrame):
+            data = data.reset_index(drop=True)
+
+        LOGGER.debug('Fitting %s to table %s; shape: %s', self.__class__.__name__,
+                     self._metadata.name, data.shape)
+        if not self._metadata_fitted:
+            self._metadata.fit(data)
+
+        self._num_rows = len(data)
+
+        LOGGER.debug('Transforming table %s; shape: %s', self._metadata.name, data.shape)
+        transformed = self._metadata.transform(data)
+        
+        
+        self._metadata_pc = Table(
+                field_names=field_names_pc,
+                primary_key=primary_key_pc,
+                field_types=field_types_pc,
+                field_transformers=field_transformers_pc,
+                anonymize_fields=anonymize_fields_pc,
+                constraints=constraints_pc,
+                dtype_transformers=self._DTYPE_TRANSFORMERS,
+                rounding=rounding_pc,
+                min_value=min_value_pc,
+                max_value=max_value_pc
+            )
+        self._metadata_pc.fit(parent_data)
+        if isinstance(parent_data, pd.DataFrame):
+            parent_data = parent_data.reset_index(drop=True)
+
+        LOGGER.debug('Fitting %s to table %s; shape: %s', self.__class__.__name__,
+                     self._metadata_pc.name, parent_data.shape)
+        self._num_rows_pc = len(parent_data)
+
+        LOGGER.debug('Transforming table %s; shape: %s', self._metadata_pc.name, parent_data.shape)
+        transformed_pc = self._metadata_pc.transform(parent_data)
+
+        if self._metadata.get_dtypes(ids=False) and self._metadata_pc.get_dtypes(ids=False):
+            LOGGER.debug(
+                'Fitting %s model to table %s', self.__class__.__name__, self._metadata.name)
+            LOGGER.debug(
+                'Fitting %s model to table %s', self.__class__.__name__, self._metadata_pc.name)
+            self._fit(transformed, transformed_pc)
+
+    def _sample(self, sizes, parent, conditions=None):
+        if conditions is None:
+            return self._model.sample(sizes, parent)
+
+        raise NotImplementedError(f"{self._MODEL_CLASS} doesn't support conditional sampling.")
+    
+    def _randomize_samples(self, randomize_samples):
+        """Randomize the samples according to user input.
+
+        If ``randomize_samples`` is false, fix the seed that the random number generator
+        uses in the underlying models.
+
+        Args:
+            randomize_samples (bool):
+                Whether or not to randomize the generated samples.
+        """
+        if self._model is None:
+            return
+
+        if randomize_samples:
+            self._set_random_state(None)
+        else:
+            self._set_random_state(FIXED_RNG_SEED)
+    
+    def _validate_file_path(self, output_file_path):
+        """Validate the user-passed output file arg, and create the file."""
+        output_path = None
+        if output_file_path == DISABLE_TMP_FILE:
+            # Temporary way of disabling the output file feature, used by HMA1.
+            return output_path
+
+        elif output_file_path:
+            output_path = os.path.abspath(output_file_path)
+            if os.path.exists(output_path):
+                raise AssertionError(f'{output_path} already exists.')
+
+        else:
+            if os.path.exists(TMP_FILE_NAME):
+                os.remove(TMP_FILE_NAME)
+
+            output_path = TMP_FILE_NAME
+
+        # Create the file.
+        with open(output_path, 'w+'):
+            pass
+
+        return output_path
+
+    def sample(self, sizes, parent, randomize_samples=True, output_file_path=None,
+               conditions=None):
+        if conditions is not None:
+            raise TypeError('This method does not support the conditions parameter. '
+                            'Please create `sdv.sampling.Condition` objects and pass them '
+                            'into the `sample_conditions` method. '
+                            'See User Guide or API for more details.')
+
+        if sizes is None:
+            raise ValueError('You must specify the number of rows to sample (e.g. num_rows=100).')
+
+        no_size = True
+        for s in sizes:
+            if s>0:
+                no_size = False
+                break
+        if no_size or len(sizes)==0:
+            return pd.DataFrame()
+
+        self._randomize_samples(randomize_samples)
+
+        output_file_path = self._validate_file_path(output_file_path)
+        
+        LOGGER.debug('Fitting %s to table %s; shape: %s', self.__class__.__name__,
+                     self._metadata_pc.name, parent.shape)
+        self._num_rows_pc = len(parent)
+
+        LOGGER.debug('Transforming table %s; shape: %s', self._metadata_pc.name, parent.shape)
+        _transformed_pc = self._metadata_pc.transform(parent)
+
+        sampled = self._sample(
+            sizes,
+            _transformed_pc
+        )
+        
+        parent_index = sampled["Parent_index"].copy()
+        sampled.drop("Parent_index", inplace=True, axis=1)
+        sampled = sampled.astype(self._type_dict)
+        sampled = self._metadata.reverse_transform(sampled)
+        sampled["Parent_index"] = parent_index
+        
+        return sampled
+    
+    
+    
+    def _set_random_state(self, random_state):
+        """Set the random state of the model's random number generator.
+
+        Args:
+            random_state (int, tuple[np.random.RandomState, torch.Generator], or None):
+                Seed or tuple of random states to use.
+        """
+        self._model.set_random_state(random_state)
+
+
+class PC_TGAN(PC_TGANModel):
+
+    _MODEL_CLASS = PC_TGANSynthesizer
+
+    def __init__(self, field_names=None, field_types=None, field_transformers=None,
+                 anonymize_fields=None, primary_key=None, constraints=None, table_metadata=None,
+                 embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
+                 generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
+                 discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
+                 rounding='auto', min_value='auto', max_value='auto'):
+        super().__init__(
+            field_names=field_names,
+            primary_key=primary_key,
+            field_types=field_types,
+            field_transformers=field_transformers,
+            anonymize_fields=anonymize_fields,
+            constraints=constraints,
+            table_metadata=table_metadata,
+            rounding=rounding,
+            max_value=max_value,
+            min_value=min_value
+        )
+
+        self._model_kwargs = {
+            'embedding_dim': embedding_dim,
+            'generator_dim': generator_dim,
+            'discriminator_dim': discriminator_dim,
+            'generator_lr': generator_lr,
+            'generator_decay': generator_decay,
+            'discriminator_lr': discriminator_lr,
+            'discriminator_decay': discriminator_decay,
+            'batch_size': batch_size,
+            'discriminator_steps': discriminator_steps,
+            'log_frequency': log_frequency,
+            'verbose': verbose,
+            'epochs': epochs,
+            'pac': pac,
+            'cuda': cuda,
+            'plot_loss': plot_loss,
+            'seed': seed
+        }
+>>>>>>> ab1fdf96ae9241eaff86dae137f90e7af1d44b05
