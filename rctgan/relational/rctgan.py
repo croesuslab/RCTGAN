@@ -5,29 +5,39 @@ Created on Mon Jun 20 14:09:24 2022
 @author: mohamedg
 """
 from rctgan.rdt2 import HyperTransformer
-from rctgan.rdt2.transformers.numerical import FloatFormatter
+from rctgan.rdt2.transformers.numerical import FloatFormatter, GaussianNormalizer
 from rctgan.rdt2.transformers.categorical import FrequencyEncoder, OneHotEncoder
 from rctgan.rdt2.transformers.datetime import OptimizedTimestampEncoder
 import itertools
-from rctgan.tabular import CTGAN, PC_CTGAN, TGAN, PC_TGAN
+from rctgan.tabular import CTGAN, PC_CTGAN
 import pandas as pd
 import numpy as np
 import random
 from scipy.stats import truncnorm, kstest
+import sys
 
 class RCTGAN:
-    def __init__(self, metadata=None, hyperparam=None, current_table=None, model_PC='CTGAN', ohe_for_parent=False):
+    def __init__(self, metadata=None, hyperparam=None, current_table=None,
+                 ohe_for_parent=False, if_gaussian_ht=True, num_transformers='gaussian', seed=None):
         self.metadata = metadata
         self.transformers = {}
-        self.transformers_for_deleted_f = {}
         self.size_tables = {}
         self.size_stats = {}
         self.models = {}
         self.hyperparam = hyperparam
         self.default_hyperparam()
         self.current_table = current_table
-        self.model_PC = model_PC
         self.ohe_for_parent = ohe_for_parent
+        self.if_gaussian_ht = if_gaussian_ht
+        if self.ohe_for_parent:
+            self.if_gaussian_ht = False
+        if self.if_gaussian_ht==False:
+            self.num_transformers = num_transformers
+        elif num_transformers=='gaussian':
+            self.num_transformers = 'float'
+        else:
+            self.num_transformers = num_transformers
+        self.seed = seed
     
     def default_hyperparam(self):
         default_hyp = {"embedding_dim": 128,
@@ -41,13 +51,12 @@ class RCTGAN:
                        "discriminator_steps": 1,
                        "log_frequency": True,
                        "verbose": False,
-                       "epochs": 300,
+                       "epochs": 1000,
                        "pac": 10,
                        "cuda": True,
                        "plot_loss": False,
                        "if_cond_discrim": False,
-                       "grand_parent": False,
-                       "parent_features_to_delete": {}
+                       "grand_parent": True
                       }
         if self.hyperparam==None:
             self.hyperparam = {}
@@ -86,25 +95,53 @@ class RCTGAN:
                     if self.ohe_for_parent:
                         config_dict["transformers"][field] =  OneHotEncoder()
                     else:
-                        config_dict["transformers"][field] =  FrequencyEncoder()
+                        config_dict["transformers"][field] =  FrequencyEncoder(add_noise=True)
                 elif meta_fields[field]['type'] == 'numerical':
                     col_retained.append(field)
                     config_dict["sdtypes"][field] =  'numerical'
-                    config_dict["transformers"][field] =  FloatFormatter(missing_value_replacement='mean')
+                    if self.num_transformers=='gaussian':
+                        config_dict["transformers"][field] =  GaussianNormalizer()
+                    elif self.num_transformers=='float':
+                        config_dict["transformers"][field] =  FloatFormatter(missing_value_replacement='mean')
+                    else:
+                        config_dict["transformers"][field] =  GaussianNormalizer()
+                    
                 elif meta_fields[field]['type'] == 'datetime':
                     col_retained.append(field)
-                    if self.ohe_for_parent:
-                        config_dict["sdtypes"][field] =  'categorical'
-                        config_dict["transformers"][field] =  OneHotEncoder()
-                    else:
-                        config_dict["sdtypes"][field] =  'datetime'
-                        format_datetime = meta_fields[field]['format']
-                        config_dict["transformers"][field] =  OptimizedTimestampEncoder(missing_value_replacement='mean',
-                                                                    datetime_format=format_datetime)
+                    config_dict["sdtypes"][field] =  'datetime'
+                    format_datetime = meta_fields[field]['format']
+                    config_dict["transformers"][field] =  OptimizedTimestampEncoder(missing_value_replacement='mean', datetime_format=format_datetime)
         ht.set_config(config=config_dict)
         ht.fit(table[col_retained])
         return ht, col_retained
+    
+    def gaussian_ht(self, table_transormed):
+        ht = HyperTransformer()
+        config_dict = {"sdtypes": {}, "transformers": {}}
+        for col in table_transormed.columns:
+            config_dict["sdtypes"][col] =  'numerical'
+            config_dict["transformers"][col] =  GaussianNormalizer()
+        ht.set_config(config=config_dict)
+        ht.fit(table_transormed)
+        return ht
+    
+    def transform(self, table_name, table):
+        col = self.transformers[table_name]["columns"]
+        if self.if_gaussian_ht==False:
+            return self.transformers[table_name]['hypertr'].transform(table[col])
+        else:
+            return  self.transformers[table_name]['gaussian_ht'].transform(self.transformers[table_name]['hypertr'].transform(table[col]))
 
+    def keep_data_col(self, meta_fields):
+        col_retained = []
+        for field in meta_fields.keys():
+            if meta_fields[field]['type'] == 'categorical':
+                col_retained.append(field)
+            elif meta_fields[field]['type'] == 'numerical':
+                col_retained.append(field)
+            elif meta_fields[field]['type'] == 'datetime':
+                col_retained.append(field)
+        return col_retained
     
     def parents_input_add(self, table_name, tables, parents_trandformed=None):
         
@@ -117,19 +154,12 @@ class RCTGAN:
             parent_prim_key = self.metadata.get_primary_key(parent_name)
             foreign_keys = list(self.metadata.get_foreign_keys(parent_name, table_name))
             bool_test = False
-            if table_name in self.transformers_for_deleted_f.keys():
-                if parent_name in self.transformers_for_deleted_f[table_name]:
-                    bool_test = True
             
-            if bool_test:
-                ht = self.transformers_for_deleted_f[table_name][parent_name]["hypertr"]
-                col = self.transformers_for_deleted_f[table_name][parent_name]["columns"]
-            else:
-                ht = self.transformers[parent_name]["hypertr"]
-                col = self.transformers[parent_name]["columns"]
+            ht = self.transformers[parent_name]["hypertr"]
+            col = self.transformers[parent_name]["columns"]
 
             for foreign_key in foreign_keys:
-                parent_trandformed = ht.transform(tables[parent_name][col])
+                parent_trandformed = self.transform(parent_name, tables[parent_name])
                 parent_trandformed.columns = ["var_"+str(i) for i in range(1, len(parent_trandformed.columns)+1)]
                 if self.hyperparam[self.current_table]["grand_parent"]:
                     if parent_name in list(self.metadata.get_parents(self.current_table)):
@@ -142,7 +172,6 @@ class RCTGAN:
                                                               how='left', 
                                                               indicator=True)
                 parent_trandformed = parent_trandformed.drop([foreign_key, '_merge'], axis=1)
-                # parent_trandformed.columns = ["var_"+str(count+i) for i in range(1, len(parent_trandformed.columns)+1)]
                 
                 if str(parents_trandformed)=="None":
                     parents_trandformed = parent_trandformed.copy()
@@ -154,23 +183,27 @@ class RCTGAN:
         return parents_trandformed
     
     def fit(self, tables):
+        if self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
         for table_name in self.metadata.get_tables():
+            children = list(self.metadata.get_children(table_name))
             self.size_tables[table_name] =len(tables[table_name])
-            meta = self.metadata.get_table_meta(table_name)['fields']
-            ht, col = self.rdt2_transform(meta, tables[table_name])
-            self.transformers[table_name] = {"hypertr": ht, "columns": col}
-            self.size_stats[table_name] = {}
-            if len(self.hyperparam[table_name]["parent_features_to_delete"].keys()) > 0:
-                self.transformers_for_deleted_f[table_name] = {}
-                for parent_name in self.hyperparam[table_name]["parent_features_to_delete"].keys():
-                    if parent_name in self.metadata.get_parents(table_name):
-                        col_to_delete = self.hyperparam[table_name]["parent_features_to_delete"][parent_name]
-                        meta_parent = self.metadata.get_table_meta(parent_name)['fields']
-                        try:
-                            ht, col = self.rdt2_transform(meta_parent, tables[parent_name], field_deleted=col_to_delete)
-                            self.transformers_for_deleted_f[table_name][parent_name] = {"hypertr": ht, "columns": col}
-                        except:
-                            print('Warning: Something went wrong with columns to delete in parent table '+parent_name+' for modeling his child table '+table_name)
+            if len(children)>0:
+                meta = self.metadata.get_table_meta(table_name)['fields']
+                ht, col = self.rdt2_transform(meta, tables[table_name])
+                self.transformers[table_name] = {"hypertr": ht, "columns": col}
+                del ht
+                del col
+                if self.if_gaussian_ht:
+                    ht = self.transformers[table_name]['hypertr']
+                    col = self.transformers[table_name]['columns']
+                    self.transformers[table_name]['gaussian_ht'] = self.gaussian_ht(ht.transform(tables[table_name][col]))
+
+                self.size_stats[table_name] = {}
+            else:
+                meta = self.metadata.get_table_meta(table_name)['fields']
+                self.transformers[table_name] = {"columns": self.keep_data_col(meta)}
 
         for table_name in self.metadata.get_tables():
             self.current_table = table_name
@@ -191,7 +224,8 @@ class RCTGAN:
                               epochs=self.hyperparam[table_name]["epochs"], 
                               pac=self.hyperparam[table_name]["pac"], 
                               cuda=self.hyperparam[table_name]["cuda"],
-                              plot_loss=self.hyperparam[table_name]["plot_loss"])
+                              plot_loss=self.hyperparam[table_name]["plot_loss"],
+                              seed=self.seed)
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
                 temp_table = tables[table_name][[prim_key]+col_table].copy()
@@ -222,7 +256,8 @@ class RCTGAN:
                                                                                              "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
                                                                                             }
                 if self.hyperparam[table_name]["plot_loss"]==True:
-                    print("plot of table: "+table_name)  
+                    print("plot of table: "+table_name)
+
                 model.fit(temp_table)
                 self.models[table_name] = model
                 del temp_table
@@ -230,40 +265,23 @@ class RCTGAN:
             else:
                 prim_key = self.metadata.get_primary_key(table_name)
                 parents_trandformed = self.parents_input_add(table_name, tables)
-                if self.model_PC=='TGAN':
-                    model = PC_TGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
-                                     generator_dim=self.hyperparam[table_name]["generator_dim"], 
-                                     discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
-                                     generator_lr=self.hyperparam[table_name]["generator_lr"], 
-                                     generator_decay=self.hyperparam[table_name]["generator_decay"], 
-                                     discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
-                                     discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
-                                     batch_size=self.hyperparam[table_name]["batch_size"], 
-                                     discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
-                                     log_frequency=self.hyperparam[table_name]["log_frequency"], 
-                                     verbose=self.hyperparam[table_name]["verbose"], 
-                                     epochs=self.hyperparam[table_name]["epochs"], 
-                                     pac=self.hyperparam[table_name]["pac"], 
-                                     cuda=self.hyperparam[table_name]["cuda"],
-                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
-                                     if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"])
-                else:
-                    model = PC_CTGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
-                                     generator_dim=self.hyperparam[table_name]["generator_dim"], 
-                                     discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
-                                     generator_lr=self.hyperparam[table_name]["generator_lr"], 
-                                     generator_decay=self.hyperparam[table_name]["generator_decay"], 
-                                     discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
-                                     discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
-                                     batch_size=self.hyperparam[table_name]["batch_size"], 
-                                     discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
-                                     log_frequency=self.hyperparam[table_name]["log_frequency"], 
-                                     verbose=self.hyperparam[table_name]["verbose"], 
-                                     epochs=self.hyperparam[table_name]["epochs"], 
-                                     pac=self.hyperparam[table_name]["pac"], 
-                                     cuda=self.hyperparam[table_name]["cuda"],
-                                     plot_loss=self.hyperparam[table_name]["plot_loss"],
-                                     if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"])
+                model = PC_CTGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
+                                 generator_dim=self.hyperparam[table_name]["generator_dim"], 
+                                 discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
+                                 generator_lr=self.hyperparam[table_name]["generator_lr"], 
+                                 generator_decay=self.hyperparam[table_name]["generator_decay"], 
+                                 discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
+                                 discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
+                                 batch_size=self.hyperparam[table_name]["batch_size"], 
+                                 discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
+                                 log_frequency=self.hyperparam[table_name]["log_frequency"], 
+                                 verbose=self.hyperparam[table_name]["verbose"], 
+                                 epochs=self.hyperparam[table_name]["epochs"], 
+                                 pac=self.hyperparam[table_name]["pac"], 
+                                 cuda=self.hyperparam[table_name]["cuda"],
+                                 plot_loss=self.hyperparam[table_name]["plot_loss"],
+                                 if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
+                                 seed=self.seed)
                     
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
@@ -300,6 +318,7 @@ class RCTGAN:
                     temp_table = tables[table_name][col_table]
                 if self.hyperparam[table_name]["plot_loss"]==True:
                     print("plot of table: "+table_name)
+
                 model.fit(temp_table, parents_trandformed)
                 self.models[table_name] = model
                 
@@ -330,26 +349,6 @@ class RCTGAN:
         
     
     def parent_child_sample_mini(self, child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name): # f_key_frame have columns _size_ and Parent_index
-        std = self.size_stats[enc_parent][enc_nb_occ_name]["std"]
-        if std > 1:
-            std = 1
-            
-        rv = truncnorm(self.size_stats[enc_parent][enc_nb_occ_name]["min"],
-                       self.size_stats[enc_parent][enc_nb_occ_name]["max"], 
-                       loc=self.size_stats[enc_parent][enc_nb_occ_name]["mean"], 
-                       scale=self.size_stats[enc_parent][enc_nb_occ_name]["std"])
-        pvalue = kstest(np.array(f_key_frame["_size_"]), rv.cdf).pvalue
-        n = len(f_key_frame)
-        if pvalue < 0.01:
-            rv = truncnorm(self.size_stats[enc_parent][enc_nb_occ_name]["min"],
-                           self.size_stats[enc_parent][enc_nb_occ_name]["max"], 
-                           loc=self.size_stats[enc_parent][enc_nb_occ_name]["mean"], 
-                           scale=std)
-            size_rv = rv.rvs(size=n)
-            size_rv = np.round(size_rv, 0)
-            f_key_frame["_size_"] = np.array(size_rv).astype(int)
-            del size_rv
-
         sampled_data[child] = self.models[child].sample(list(f_key_frame["_size_"]), table_transformed)
 
         sampled_data[child] = sampled_data[child].merge(f_key_frame, 
@@ -390,8 +389,24 @@ class RCTGAN:
                 table_transformed = table_transformed.drop([f_key, "_merge"], axis=1)
         return table_transformed
                 
-    
-    def parent_child_sample(self, child, sampled_data, tables_transformed, if_restricted_trans_mod):
+    def dupli_rows(self, data, size_list):
+        if len(data)==len(size_list):
+            df = data.copy()
+            df.index = range(len(df))
+            df['index_prim_key'] = range(len(df))
+            size_list_2 = []
+            for k in range(len(size_list)):
+                s = size_list[k]
+                size_list_2 += [k]*s
+            index_prim_key = pd.DataFrame(size_list_2, columns=['index_prim_key'])
+            df = index_prim_key.merge(df, on=['index_prim_key'], how='left')
+            df = df.drop(['index_prim_key'], axis=1)
+            return df
+        else:
+            return None
+
+
+    def parent_child_sample(self, child, sampled_data, tables_transformed):
         parents_name = list(self.metadata.get_parents(child))
         all_parents_sampled = True
         for parent_name in parents_name:
@@ -407,26 +422,10 @@ class RCTGAN:
             if all_parents_sampled == False:
                 break
             
-            bool_test = False
-            if child in self.transformers_for_deleted_f.keys():
-                if parent_name in self.transformers_for_deleted_f[child]:
-                    bool_test = True
-            if bool_test:
-                if if_restricted_trans_mod[parent_name]==False:
-                    ht = self.transformers_for_deleted_f[child][parent_name]["hypertr"]
-                    col = self.transformers_for_deleted_f[child][parent_name]["columns"]
-                    table_transformed = ht.transform(sampled_data[parent_name][col])
-                    tables_transformed[parent_name] = table_transformed.copy()
-                    if_restricted_trans_mod[parent_name] = True
-                    del table_transformed
-            else:
-                if if_restricted_trans_mod[parent_name]:
-                    ht = self.transformers[parent_name]["hypertr"]
-                    col = self.transformers[parent_name]["columns"]
-                    table_transformed = ht.transform(sampled_data[parent_name][col])
-                    tables_transformed[parent_name] = table_transformed.copy()
-                    if_restricted_trans_mod[parent_name] = False
-                    del table_transformed
+            if parent_name not in tables_transformed.keys():
+                table_transformed = self.transform(parent_name, sampled_data[parent_name])
+                tables_transformed[parent_name] = table_transformed.copy()
+                del table_transformed
         
         if all_parents_sampled:
             enc_parent = parents_name[0]
@@ -439,6 +438,7 @@ class RCTGAN:
             prim_enc = self.metadata.get_primary_key(enc_parent)
             f_key_frame = pd.DataFrame(sampled_data[enc_parent][[prim_enc, enc_nb_occ_name]])
             f_key_frame.columns = [enc_foreign_key, "_size_"]
+
             f_key_frame["Parent_index"] = list(f_key_frame.index)
             
             if self.hyperparam[child]["grand_parent"]:
@@ -447,48 +447,44 @@ class RCTGAN:
             if len(parents_name)==1 and len(list(self.metadata.get_foreign_keys(enc_parent, child)))==1:
                 self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name)
             else:
+                table_transformed = self.dupli_rows(table_transformed, list(f_key_frame["_size_"])) # Added by me
+                f_key_frame = self.dupli_rows(f_key_frame, list(f_key_frame["_size_"])) # Added by me
+                f_key_frame["_size_"] = [1 for _ in range(len(f_key_frame))] # Modified by me
+                f_key_frame["Parent_index"] = list(f_key_frame.index) # Modified by me
+
                 for parent_name in parents_name:
                     foreign_keys = list(self.metadata.get_foreign_keys(parent_name, child))
                     if parent_name==enc_parent:
                         foreign_keys.remove(enc_foreign_key)
                     for foreign_key in foreign_keys:
                         start_var = len(table_transformed.columns)
-                        indexes_choosen = list(random.choices(tables_transformed[parent_name].index, k=len(sampled_data[enc_parent])))
-                        temp_table = tables_transformed[parent_name].filter(items=indexes_choosen, axis=0)
+                        indexes_choosen = list(random.choices(tables_transformed[parent_name].index, k=len(table_transformed))) # Modified by me
+                        temp_table = tables_transformed[parent_name].loc[indexes_choosen] # Modified by me
                         temp_table.columns = ["var_"+str(start_var+i+1) for i in range(len(temp_table.columns))]
                         temp_table.index = range(len(temp_table))
                         table_transformed = pd.concat([table_transformed, temp_table], axis=1)
                         
                         prim_key = self.metadata.get_primary_key(parent_name)
-                        f_key_frame[foreign_key] = list(sampled_data[parent_name].filter(items=indexes_choosen, axis=0)[prim_key])
+                        f_key_frame[foreign_key] = list(sampled_data[parent_name].loc[indexes_choosen][prim_key]) # Modified by me
                         if self.hyperparam[child]["grand_parent"]:
                             table_transformed = self.granp_parent_transform_add(parent_name, table_transformed, foreign_key, f_key_frame, sampled_data, tables_transformed)
                 self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame, enc_parent, enc_nb_occ_name)
             
         children = list(self.metadata.get_children(child))
         if len(children)>0:
-            ht = self.transformers[child]["hypertr"]
-            col = self.transformers[child]["columns"]
-            table_transformed = ht.transform(sampled_data[child][col])
+            table_transformed = self.transform(child, sampled_data[child])
             tables_transformed[child] = table_transformed.copy()
-            if_restricted_trans_mod[child] = False
             del table_transformed
         for child_2 in children:
-            if child_2 in self.transformers_for_deleted_f.keys():
-                if child in self.transformers_for_deleted_f[child_2]:
-                    ht = self.transformers_for_deleted_f[child_2][child]["hypertr"]
-                    col = self.transformers_for_deleted_f[child_2][child]["columns"]
-                    table_transformed = ht.transform(sampled_data[child][col])
-                    tables_transformed[child] = table_transformed.copy()
-                    if_restricted_trans_mod[child] = True
-                    del table_transformed
             self.parent_child_sample(child_2, sampled_data, tables_transformed)
             
         
     def sample(self):
         sampled_data = {}
         tables_transformed = {}
-        if_restricted_trans_mod = {}
+        if self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
         for table_name in self.metadata.get_tables():
             if len(self.metadata.get_parents(table_name)) == 0:
                 prim_key = self.metadata.get_primary_key(table_name)
@@ -496,22 +492,11 @@ class RCTGAN:
                 sampled_data[table_name] = self.models[table_name].sample(n_table)
                 children = list(self.metadata.get_children(table_name))
                 if len(children)>0:
-                    ht = self.transformers[table_name]["hypertr"]
-                    col = self.transformers[table_name]["columns"]
-                    table_transformed = ht.transform(sampled_data[table_name][col])
+                    table_transformed = self.transform(table_name, sampled_data[table_name])
                     tables_transformed[table_name] = table_transformed.copy()
-                    if_restricted_trans_mod[table_name] = False
                     del table_transformed
                 for child in children:
-                    if child in self.transformers_for_deleted_f.keys():
-                        if table_name in self.transformers_for_deleted_f[child]:
-                            ht = self.transformers_for_deleted_f[child][table_name]["hypertr"]
-                            col = self.transformers_for_deleted_f[child][table_name]["columns"]
-                            table_transformed = ht.transform(sampled_data[table_name][col])
-                            tables_transformed[table_name] = table_transformed.copy()
-                            if_restricted_trans_mod[table_name] = True
-                            del table_transformed
-                    self.parent_child_sample(child, sampled_data, tables_transformed, if_restricted_trans_mod)
+                    self.parent_child_sample(child, sampled_data, tables_transformed)
         
         for tab_name in sampled_data.keys():
             for c in sampled_data[tab_name].columns:
