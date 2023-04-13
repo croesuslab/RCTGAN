@@ -950,7 +950,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                                   columns=parent_data.columns)
             parent = np.array(parent)
             parent = torch.from_numpy(parent.astype('float32')).to(self._device)
-            # parent = torch.tensor(parent)
             parent = parent.repeat(self._batch_size, 1)
             n  = sizes[count]
             data = []

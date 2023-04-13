@@ -27,12 +27,8 @@ The Synthetic Data Vault Project</a> repositories.
 **Using `pip`:**
 
 ```bash
-pip install RCTGAN
+pip install -e RCTGAN
 ```
-
-
-For more installation options please visit the [SDV installation Guide](
-https://sdv.dev/SDV/getting_started/install.html)
 
 # Quickstart
 
@@ -46,7 +42,7 @@ the data and configures the meta data. In the second step, we will use the sdv A
 save a hierarchical model. We will cover these two steps in this section using an example dataset.
 
 ### Step 1: Load dataset and define Metadata
-The dataset we used is: <a href="https://github.com/sdv-dev">lien</a>.
+The dataset we used is <a href="https://github.com/sdv-dev">Biodegradability</a>.
 
 ```python3
 import pandas as pd
@@ -276,7 +272,6 @@ pac (int) | Number of samples to group together when applying the discriminator.
 # Citation
 
 If you use **RC-TGAN** for your research, please consider citing the following paper:
-<a href="https://arxiv.org/abs/2211.07588">Row Conditional-TGAN for Generating Synthetic Relational Databases</a>
 Mohamed Gueye, Yazid Attabi, Maxime Dumas. [Row Conditional-TGAN for Generating Synthetic Relational Databases](https://arxiv.org/abs/2211.07588).
 
 ```
