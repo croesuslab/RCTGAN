@@ -1,7 +1,7 @@
 <div align="center">
 <br/>
 <p align="center">
-    <i>This repository is about <a href="https://arxiv.org/abs/2211.07588">Row Condition Tabular GAN</a>, a project from <a href="https://www.croesus.com/about-us/croesus-lab/">DataCebo</a>.</i>
+    <i>This repository is about <a href="https://arxiv.org/abs/2211.07588">Row Condition Tabular GAN</a>, a project from <a href="https://www.croesus.com/about-us/croesus-lab/">Croesus Lab</a>.</i>
 </p>
 
 <div align="left">
@@ -292,7 +292,7 @@ Mohamed Gueye, Yazid Attabi, Maxime Dumas. [Row Conditional-TGAN for Generating 
 
 
 <div align="center">
-<a href="https://datacebo.com"><img align="center" width=40% src="https://github.com/sdv-dev/SDV/blob/master/docs/images/DataCebo.png"></img></a>
+<a href="https://www.croesus.com/about-us/croesus-lab/"><img align="center" width=40% src="/rctgan/images/croesus-lab-horizontal-rouge.png"></img></a>
 </div>
 <br/>
 <br/>
