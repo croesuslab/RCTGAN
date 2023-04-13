@@ -77,8 +77,8 @@ development_requires = [
 ]
 
 setup(
-    author='MIT Data To AI Lab',
-    author_email='dailabmit@gmail.com',
+    author='Croesus Lab',
+    author_email='mohamed.gueye@croesus.com',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
@@ -90,7 +90,7 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
     ],
-    description='Synthetic Data Generation for tabular, relational and time series data.',
+    description='Synthetic Data Generation for relational data.',
     extras_require={
         'test': tests_require,
         'dev': development_requires + tests_require,
@@ -98,7 +98,7 @@ setup(
     },
     include_package_data=True,
     install_requires=install_requires,
-    keywords='rctgan synthetic-data synhtetic-data-generation timeseries single-table multi-table',
+    keywords='rctgan synthetic-data synhtetic-data-generation multi-table',
     license='MIT license',
     long_description=readme + '\n\n' + history,
     long_description_content_type='text/markdown',

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Main sdvrctgan module."""
+"""Main rctgan module."""
 
 import pickle
 import warnings
