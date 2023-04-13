@@ -18,9 +18,6 @@ install_requires = [
     "numpy>=1.20.0,<2;python_version>='3.7'",
     'pandas>=1.1.3,<2',
     'tqdm>=4.15,<5',
-    # 'copulas>=0.6.0,<0.7',
-    # 'ctgan>=0.5.0,<0.6',
-    # 'deepecho>=0.3.0.post1,<0.4',
     'rdt>=0.6.1,<0.7',
     'sdmetrics>=0.4.1,<0.5',
 ]
@@ -111,7 +108,7 @@ setup(
     setup_requires=setup_requires,
     test_suite='tests',
     tests_require=tests_require,
-    url='https://github.com/sdv-dev/SDV',
-    version='0.2.0.dev0',
+    url='https://www.croesus.com/about-us/croesus-lab/',
+    version='1.01',
     zip_safe=False,
 )

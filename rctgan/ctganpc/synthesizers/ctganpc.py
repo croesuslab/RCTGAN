@@ -773,7 +773,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self._generator = Generator(
             self._embedding_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
             self._generator_dim,
-            data_dim + data_dim_pc # ----------------------------------------
+            data_dim
         ).to(self._device)
 
         if self.if_cond_discrim:
@@ -805,7 +805,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
-        # print(self._generator.seq)
+
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
 
@@ -831,8 +831,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                     real_parent = torch.from_numpy(real_parent.astype('float32')).to(self._device)
                     input_generator = torch.cat([fakez, real_parent], 1)
                     fake = self._generator(input_generator)
-                    fake_parent = fake[:, data_dim:] # ----------------------------------------
-                    fake = fake[:, :data_dim] # ----------------------------------------
                     fakeact = self._apply_activate(fake)
                     
 
@@ -875,8 +873,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 
                 input_generator = torch.cat([fakez, real_parent], 1)
                 fake = self._generator(input_generator)
-                fake_parent = fake # ----------------------------------------
-                fake = fake[:, :data_dim] # ----------------------------------------
                 fakeact = self._apply_activate(fake)
 
                 if c1 is not None:
@@ -900,8 +896,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 optimizerG.zero_grad()
                 loss_g.backward()
                 optimizerG.step()
-                # print(self._generator.seq.parameters())
-                # print([x.view(-1) for x in self._generator.parameters()])
 
             if self._verbose:
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
@@ -951,7 +945,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         else:
             global_condition_vec = None
         count = 0
-        data_dim = self._transformer.output_dimensions
         for p in parent_data.index:
             parent = pd.DataFrame(np.array(parent_data.loc[p]).reshape(1,len(parent_data.columns)),
                                   columns=parent_data.columns)
@@ -981,7 +974,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 
                 input_generator = torch.cat([fakez, parent], dim=1)
                 fake = self._generator(input_generator)
-                fake = fake[:, :data_dim] # ----------------------------------------
                 fakeact = self._apply_activate(fake)
                 data.append(fakeact.detach().cpu().numpy())
     
