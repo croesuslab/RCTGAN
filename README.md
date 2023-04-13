@@ -8,7 +8,7 @@
 <br/>
 <p align="center">
 <a href="https://arxiv.org/abs/2211.07588">
-<img align="center" width=40% src="/images/logo_rctgan.PNG"></img>
+<img align="center" width=40% src="/rctgan/images/logo_rctgan.PNG"></img>
 </a>
 </p>
 </div>
@@ -261,27 +261,16 @@ The following table overview and describe hyperparameters:
 embedding_dim (int) | Size of the random sample passed to the Generator. Defaults to 128|
 generator_dim (tuple or list of ints) | Size of the output samples for each one of the Residuals. A Residual Layer will be created for each one of the values provided. Defaults to (256, 256)|
 discriminator_dim (tuple or list of ints) | Size of the output samples for each one of the Discriminator Layers. A Linear Layer will be created for each one of the values provided. Defaults to (256, 256)|
-
 generator_lr (float) | Learning rate for the generator. Defaults to 2e-4|
-
 generator_decay (float) | Generator weight decay for the Adam Optimizer. Defaults to 1e-6|
-
 discriminator_lr (float) | Learning rate for the discriminator. Defaults to 2e-4
-
 discriminator_decay (float) | Discriminator weight decay for the Adam Optimizer. Defaults to 1e-6|
-
 batch_size (int) | Number of data samples to process in each step|
-
 discriminator_steps (int) | Number of discriminator updates to do for each generator update. From the WGAN paper: https://arxiv.org/abs/1701.07875. WGAN paper default is 5. Default used is 1 to match original CTGAN implementation|
-
 log_frequency (boolean) | Whether to use log frequency of categorical levels in conditional sampling. Defaults to True|
-
 verbose (boolean) | Whether to have print statements for progress results. Defaults to False|
-
 epochs (int) | Number of training epochs. Defaults to 300|
-
 pac (int) | Number of samples to group together when applying the discriminator. Defaults to 10|
-
  cuda (bool) | Whether to attempt to use cuda for GPU computation. If this is False or CUDA is not available, CPU will be used. Defaults to True.|
 
 # Citation
