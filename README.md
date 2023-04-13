@@ -42,7 +42,7 @@ the data and configures the meta data. In the second step, we will use the sdv A
 save a hierarchical model. We will cover these two steps in this section using an example dataset.
 
 ### Step 1: Load dataset and define Metadata
-The dataset we used is <a href="https://github.com/sdv-dev">Biodegradability</a>.
+The dataset we used is <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a>.
 
 ```python3
 import pandas as pd
