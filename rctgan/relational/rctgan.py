@@ -457,14 +457,15 @@ class RCTGAN:
                         foreign_keys.remove(enc_foreign_key)
                     for foreign_key in foreign_keys:
                         start_var = len(table_transformed.columns)
-                        indexes_choosen = list(random.choices(tables_transformed[parent_name].index, k=len(table_transformed)))
-                        temp_table = tables_transformed[parent_name].loc[indexes_choosen]
-                        temp_table.columns = ["var_"+str(start_var+i+1) for i in range(len(temp_table.columns))]
-                        temp_table.index = range(len(temp_table))
-                        table_transformed = pd.concat([table_transformed, temp_table], axis=1)
+                        indexes_chosen = list(random.choices(tables_transformed[parent_name].index, k=len(table_transformed)))
+                        random_parent_rows_transformed = tables_transformed[parent_name].loc[indexes_chosen].copy()
+                        random_parent_rows_transformed.columns = ["var_"+str(start_var+i+1) for i in range(len(random_parent_rows_transformed.columns))]
+                        random_parent_rows_transformed.index = range(len(random_parent_rows_transformed))
+                        table_transformed = pd.concat([table_transformed, random_parent_rows_transformed], axis=1)
+                        del random_parent_rows_transformed
                         
                         prim_key = self.metadata.get_primary_key(parent_name)
-                        f_key_frame[foreign_key] = list(sampled_data[parent_name].loc[indexes_choosen][prim_key])
+                        f_key_frame[foreign_key] = list(sampled_data[parent_name].loc[indexes_chosen][prim_key])
                         if self.hyperparam[child]["grand_parent"]:
                             table_transformed = self.granp_parent_transform_add(parent_name, table_transformed, foreign_key, f_key_frame, sampled_data, tables_transformed)
                 self.parent_child_sample_mini(child, sampled_data, table_transformed, f_key_frame)

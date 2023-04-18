@@ -1,7 +1,7 @@
 <div align="center">
 <br/>
 <p align="center">
-    <i>This repository is about <a href="https://arxiv.org/abs/2211.07588">Row Condition Tabular GAN</a>, a project from <a href="https://www.croesus.com/about-us/croesus-lab/">Croesus Lab</a>.</i>
+    <i>This repository is about <a href="https://arxiv.org/abs/2211.07588">Row Conditional Tabular GAN</a>, a project from <a href="https://www.croesus.com/about-us/croesus-lab/">Croesus Lab</a>.</i>
 </p>
 
 <div align="left">
@@ -54,7 +54,7 @@ df_bond = pd.read_csv('bond.csv')
 df_molecule = pd.read_csv('molecule.csv')
 ```
 
-Let's transform dataframes to a dictionary of dataframes and define Metadata. For more details about Metadata see: [Working with Metadata](https://sdv.dev/SDV/user_guides/relational/relational_metadata.html)
+Let's transform dataframes to a dictionary of dataframes and define Metadata. For more details about Metadata see the SDV guide: [Working with Metadata](https://sdv.dev/SDV/user_guides/relational/relational_metadata.html)
 tutorial.
 
 ```python
@@ -97,11 +97,10 @@ The returned objects contain the following information:
 Let's define Metadata.
 
 ```python
-#creation de l'instance matadata
+# Metadata instance
 metadata = Metadata()
 
-#Specification des proprietees des differents champs
-
+# Specification of fields propreties
 atom_fields = {
     'atom_id': {
         'type': 'id',
@@ -150,7 +149,7 @@ molecule_fields = {
     
  }
 
-#Ajout des tables 
+# Add tables 
 
 metadata.add_table(
      name='atom',
@@ -172,7 +171,7 @@ metadata.add_table(
      fields_metadata = molecule_fields
  )
 
-#Ajout des relations
+# Add relationships
 metadata.add_relationship(parent='atom', child='bond', foreign_key = 'atom_id')
 metadata.add_relationship(parent='atom', child='bond', foreign_key = 'atom_id2')
 metadata.add_relationship(parent='molecule', child='atom')
@@ -222,10 +221,6 @@ new_data = model.sample()
 
 The output will be a dictionary with the same structure as the original `tables` dict,
 but filled with synthetic data instead of the real one.
-
-Finally, if you want to evaluate how similar the sampled tables are to the real data,
-please have a look at our [evaluation](EVALUATION.md) framework or visit the [SDMetrics](
-https://github.com/sdv-dev/SDMetrics) library.
 
 ## 3. Hyperparameters configuration
 Each table is modeled by a modified CTGAN. In RCTGAN, we can tune the hyperparameters of each CTGAN (tables) through a dictionnary.

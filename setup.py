@@ -80,7 +80,7 @@ setup(
     author='Croesus Lab',
     author_email='mohamed.gueye@croesus.com',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 1 - Planning',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
