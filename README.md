@@ -262,7 +262,9 @@ log_frequency (boolean) | Whether to use log frequency of categorical levels in 
 verbose (boolean) | Whether to have print statements for progress results. Defaults to False|
 epochs (int) | Number of training epochs. Defaults to 300|
 pac (int) | Number of samples to group together when applying the discriminator. Defaults to 10|
- cuda (bool) | Whether to attempt to use cuda for GPU computation. If this is False or CUDA is not available, CPU will be used. Defaults to True.|
+cuda (bool) | Whether to attempt to use cuda for GPU computation. If this is False or CUDA is not available, CPU will be used. Defaults to True.|
+if_cond_discrim (bool) | If this is True, conditional information (parent rows) are integrated as input of discriminator. Defaults to False.|
+grand_parent (bool) | If this is True, grandparents of the called table are considered as conditional information added to the parents. If the called table has no grandparent, the value of this hyperparameter has no impact. Defaults to True.|
 
 # Citation
 
