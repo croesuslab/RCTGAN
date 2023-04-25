@@ -571,7 +571,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
-                 plot_loss=False, if_cond_discrim=False, seed=None):
+                 plot_loss=False, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -592,8 +592,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self.pac = pac
 
         self.plot_loss = plot_loss
-
-        self.if_cond_discrim = if_cond_discrim
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -776,18 +774,12 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             data_dim
         ).to(self._device)
 
-        if self.if_cond_discrim:
-            discriminator = Discriminator(
-                data_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
-                self._discriminator_dim,
-                pac=self.pac
-            ).to(self._device)
-        else:
-            discriminator = Discriminator(
-                data_dim + self._data_sampler.dim_cond_vec(),
-                self._discriminator_dim,
-                pac=self.pac
-            ).to(self._device)
+        
+        discriminator = Discriminator(
+            data_dim + self._data_sampler.dim_cond_vec(),
+            self._discriminator_dim,
+            pac=self.pac
+        ).to(self._device)
 
         optimizerG = optim.Adam(
             self._generator.parameters(), lr=self._generator_lr, betas=(0.5, 0.9),
@@ -843,9 +835,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                         real_cat = real
                         fake_cat = fakeact
                     
-                    if self.if_cond_discrim:
-                        fake_cat = torch.cat([fake_cat, real_parent], 1)
-                        real_cat = torch.cat([real_cat, real_parent], 1)
 
                     y_fake = discriminator(fake_cat)
                     y_real = discriminator(real_cat)
@@ -876,15 +865,9 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 fakeact = self._apply_activate(fake)
 
                 if c1 is not None:
-                    if self.if_cond_discrim:
-                        y_fake = discriminator(torch.cat([fakeact, c1, real_parent], dim=1))
-                    else:
-                        y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
+                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
                 else:
-                    if self.if_cond_discrim:
-                        y_fake = discriminator(torch.cat([fakeact, real_parent], dim=1))
-                    else:
-                        y_fake = discriminator(fakeact)
+                    y_fake = discriminator(fakeact)
 
                 if condvec is None:
                     cross_entropy = 0

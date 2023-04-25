@@ -55,7 +55,6 @@ class RCTGAN:
                        "pac": 10,
                        "cuda": True,
                        "plot_loss": False,
-                       "if_cond_discrim": False,
                        "grand_parent": True
                       }
         if self.hyperparam==None:
@@ -280,7 +279,6 @@ class RCTGAN:
                                  pac=self.hyperparam[table_name]["pac"], 
                                  cuda=self.hyperparam[table_name]["cuda"],
                                  plot_loss=self.hyperparam[table_name]["plot_loss"],
-                                 if_cond_discrim=self.hyperparam[table_name]["if_cond_discrim"],
                                  seed=self.seed)
                     
                 col_table = self.transformers[table_name]["columns"]

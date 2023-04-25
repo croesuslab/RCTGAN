@@ -452,7 +452,7 @@ class PC_CTGAN(PC_CTGANModel):
                  embedding_dim=128, generator_dim=(256, 256), discriminator_dim=(256, 256),
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
-                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, if_cond_discrim=False, seed=None,
+                 log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
                  rounding='auto', min_value='auto', max_value='auto'):
         super().__init__(
             field_names=field_names,
@@ -483,6 +483,5 @@ class PC_CTGAN(PC_CTGANModel):
             'pac': pac,
             'cuda': cuda,
             'plot_loss': plot_loss,
-            'if_cond_discrim': if_cond_discrim,
             'seed': seed
         }

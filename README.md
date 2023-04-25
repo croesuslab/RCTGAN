@@ -19,8 +19,8 @@
 
 The **Row Conditional Tabular GAN (RC-TGAN)** is the first method for generating synthetic relational databases based on GAN in our knowledge. The RC-TGAN models relationship information between tables by incorporating conditional data of parent rows into the design of the child table's GAN. We further extend the RC-TGAN to model the influence that grandparent table rows may have on their grandchild rows, in order to prevent the loss of this connection when the rows of the parent table fail to transfer this relationship information. For more details see our article on arxiv: <a href="https://arxiv.org/abs/2211.07588">Row Conditional-TGAN for Generating Synthetic Relational Databases</a>.
 
-This repository is the implementation of RC-TGAN and is based on <a href="https://github.com/sdv-dev">
-The Synthetic Data Vault Project</a> repositories.
+This repository is the implementation of RC-TGAN and is based on <a href="https://github.com/sdv-dev/CTGAN">
+CTGAN project</a> repository.
 
 # Install
 
@@ -43,6 +43,7 @@ save a hierarchical model. We will cover these two steps in this section using a
 
 ### Step 1: Load dataset and define Metadata
 The dataset we used is <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a>.
+The <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a> dataset is used as example in this tutorial
 
 ```python3
 import pandas as pd
@@ -94,7 +95,7 @@ The returned objects contain the following information:
  [328 rows x 4 columns]}
 ```
 
-Let's define Metadata.
+Let's define Metadata using <a href="https://github.com/sdv-dev/SDV/tree/master/sdv/metadata">SDV API</a>.
 
 ```python
 # Metadata instance
@@ -200,8 +201,7 @@ import pickle
 pickle.dump(model, open('model_rctgan.p', "wb" ) )
 ```
 
-The generated `pkl` file will not include any of the original data in it, so it can be
-safely sent to where the synthetic data will be generated without any privacy concerns.
+The generated pkl file will not include any of the original data in it, so it can be safely used instead of the real data.
 
 ## 2. Sample data from the fitted model
 
@@ -223,7 +223,7 @@ The output will be a dictionary with the same structure as the original `tables`
 but filled with synthetic data instead of the real one.
 
 ## 3. Hyperparameters configuration
-Each table is modeled by a modified CTGAN. In RCTGAN, we can tune the hyperparameters of each CTGAN (tables) through a dictionnary.
+Each table is modeled by a modified <a href="https://github.com/sdv-dev/CTGAN">CTGAN</a>. In RCTGAN, we can tune the hyperparameters of each CTGAN (tables) through a dictionnary.
 
 ```python3
 hyper = {'molecule': {'embedding_dim':64,
@@ -247,7 +247,7 @@ model.fit(tables)
 ```
 
 The following table overview and describe hyperparameters:
-| Hyparameters Description | |
+| Hyparameters | Description |
 | --------------------------------------------- | -------------------------------------------------------------------- |
 embedding_dim (int) | Size of the random sample passed to the Generator. Defaults to 128|
 generator_dim (tuple or list of ints) | Size of the output samples for each one of the Residuals. A Residual Layer will be created for each one of the values provided. Defaults to (256, 256)|
@@ -263,19 +263,18 @@ verbose (boolean) | Whether to have print statements for progress results. Defau
 epochs (int) | Number of training epochs. Defaults to 300|
 pac (int) | Number of samples to group together when applying the discriminator. Defaults to 10|
 cuda (bool) | Whether to attempt to use cuda for GPU computation. If this is False or CUDA is not available, CPU will be used. Defaults to True.|
-if_cond_discrim (bool) | If this is True, conditional information (parent rows) are integrated as input of discriminator. Defaults to False.|
 grand_parent (bool) | If this is True, grandparents of the called table are considered as conditional information added to the parents. If the called table has no grandparent, the value of this hyperparameter has no impact. Defaults to True.|
 
 # Citation
 
 If you use **RC-TGAN** for your research, please consider citing the following paper:
-Mohamed Gueye, Yazid Attabi, Maxime Dumas. [Row Conditional-TGAN for Generating Synthetic Relational Databases](https://arxiv.org/abs/2211.07588).
+Mohamed Gueye, Yazid Attabi, Maxime Dumas. [Row Conditional-TGAN for Generating Synthetic Relational Databases. IEEE ICASSP 2023.](https://arxiv.org/abs/2211.07588).
 
 ```
 @article{gueye2022row,
   title={Row Conditional-TGAN for generating synthetic relational databases},
   author={Gueye, Mohamed and Attabi, Yazid and Dumas, Maxime},
-  journal={arXiv preprint arXiv:2211.07588},
+  journal={IEEE ICASSP 2023},
   year={2022}
 }
 ```
