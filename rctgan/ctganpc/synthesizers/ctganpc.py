@@ -571,7 +571,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
-                 plot_loss=False, if_cond_discrim=False, seed=None):
+                 plot_loss=False, seed=None):
 
         assert batch_size % 2 == 0
 
@@ -592,8 +592,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self.pac = pac
 
         self.plot_loss = plot_loss
-
-        self.if_cond_discrim = if_cond_discrim
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -773,21 +771,15 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self._generator = Generator(
             self._embedding_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
             self._generator_dim,
-            data_dim + data_dim_pc # ----------------------------------------
+            data_dim
         ).to(self._device)
 
-        if self.if_cond_discrim:
-            discriminator = Discriminator(
-                data_dim + self._data_sampler.dim_cond_vec() + data_dim_pc,
-                self._discriminator_dim,
-                pac=self.pac
-            ).to(self._device)
-        else:
-            discriminator = Discriminator(
-                data_dim + self._data_sampler.dim_cond_vec(),
-                self._discriminator_dim,
-                pac=self.pac
-            ).to(self._device)
+        
+        discriminator = Discriminator(
+            data_dim + self._data_sampler.dim_cond_vec(),
+            self._discriminator_dim,
+            pac=self.pac
+        ).to(self._device)
 
         optimizerG = optim.Adam(
             self._generator.parameters(), lr=self._generator_lr, betas=(0.5, 0.9),
@@ -805,7 +797,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
-        # print(self._generator.seq)
+
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
 
@@ -831,8 +823,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                     real_parent = torch.from_numpy(real_parent.astype('float32')).to(self._device)
                     input_generator = torch.cat([fakez, real_parent], 1)
                     fake = self._generator(input_generator)
-                    fake_parent = fake[:, data_dim:] # ----------------------------------------
-                    fake = fake[:, :data_dim] # ----------------------------------------
                     fakeact = self._apply_activate(fake)
                     
 
@@ -845,9 +835,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                         real_cat = real
                         fake_cat = fakeact
                     
-                    if self.if_cond_discrim:
-                        fake_cat = torch.cat([fake_cat, real_parent], 1)
-                        real_cat = torch.cat([real_cat, real_parent], 1)
 
                     y_fake = discriminator(fake_cat)
                     y_real = discriminator(real_cat)
@@ -875,20 +862,12 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 
                 input_generator = torch.cat([fakez, real_parent], 1)
                 fake = self._generator(input_generator)
-                fake_parent = fake # ----------------------------------------
-                fake = fake[:, :data_dim] # ----------------------------------------
                 fakeact = self._apply_activate(fake)
 
                 if c1 is not None:
-                    if self.if_cond_discrim:
-                        y_fake = discriminator(torch.cat([fakeact, c1, real_parent], dim=1))
-                    else:
-                        y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
+                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
                 else:
-                    if self.if_cond_discrim:
-                        y_fake = discriminator(torch.cat([fakeact, real_parent], dim=1))
-                    else:
-                        y_fake = discriminator(fakeact)
+                    y_fake = discriminator(fakeact)
 
                 if condvec is None:
                     cross_entropy = 0
@@ -900,8 +879,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 optimizerG.zero_grad()
                 loss_g.backward()
                 optimizerG.step()
-                # print(self._generator.seq.parameters())
-                # print([x.view(-1) for x in self._generator.parameters()])
 
             if self._verbose:
                 print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
@@ -951,13 +928,11 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         else:
             global_condition_vec = None
         count = 0
-        data_dim = self._transformer.output_dimensions
         for p in parent_data.index:
             parent = pd.DataFrame(np.array(parent_data.loc[p]).reshape(1,len(parent_data.columns)),
                                   columns=parent_data.columns)
             parent = np.array(parent)
             parent = torch.from_numpy(parent.astype('float32')).to(self._device)
-            # parent = torch.tensor(parent)
             parent = parent.repeat(self._batch_size, 1)
             n  = sizes[count]
             data = []
@@ -981,7 +956,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 
                 input_generator = torch.cat([fakez, parent], dim=1)
                 fake = self._generator(input_generator)
-                fake = fake[:, :data_dim] # ----------------------------------------
                 fakeact = self._apply_activate(fake)
                 data.append(fakeact.detach().cpu().numpy())
     

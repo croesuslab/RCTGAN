@@ -18,9 +18,6 @@ install_requires = [
     "numpy>=1.20.0,<2;python_version>='3.7'",
     'pandas>=1.1.3,<2',
     'tqdm>=4.15,<5',
-    # 'copulas>=0.6.0,<0.7',
-    # 'ctgan>=0.5.0,<0.6',
-    # 'deepecho>=0.3.0.post1,<0.4',
     'rdt>=0.6.1,<0.7',
     'sdmetrics>=0.4.1,<0.5',
 ]
@@ -80,10 +77,10 @@ development_requires = [
 ]
 
 setup(
-    author='MIT Data To AI Lab',
-    author_email='dailabmit@gmail.com',
+    author='Croesus Lab',
+    author_email='mohamed.gueye@croesus.com',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 1 - Planning',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
@@ -93,7 +90,7 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
     ],
-    description='Synthetic Data Generation for tabular, relational and time series data.',
+    description='Synthetic Data Generation for relational data.',
     extras_require={
         'test': tests_require,
         'dev': development_requires + tests_require,
@@ -101,7 +98,7 @@ setup(
     },
     include_package_data=True,
     install_requires=install_requires,
-    keywords='rctgan synthetic-data synhtetic-data-generation timeseries single-table multi-table',
+    keywords='rctgan synthetic-data synhtetic-data-generation multi-table',
     license='MIT license',
     long_description=readme + '\n\n' + history,
     long_description_content_type='text/markdown',
@@ -111,7 +108,7 @@ setup(
     setup_requires=setup_requires,
     test_suite='tests',
     tests_require=tests_require,
-    url='https://github.com/sdv-dev/SDV',
-    version='0.2.0.dev0',
+    url='https://www.croesus.com/about-us/croesus-lab/',
+    version='1.01',
     zip_safe=False,
 )
