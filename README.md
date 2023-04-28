@@ -8,13 +8,13 @@
 <br/>
 <p align="center">
 <a href="https://arxiv.org/abs/2211.07588">
-<img align="center" width=40% src="/rctgan/images/croesus-lab-horizontal-rouge.png"></img>
+<img align="center" width=13% src="/rctgan/images/croesus-lab-horizontal-rouge.png"></img>
 </a>
 </p>
 </div>
 <center>
-    <font  size="7">RC-TGAN</font><br>
-    <font  size="3">Row Conditional Tabular GAN</font>
+<h3>RC-TGAN</h3> 
+<h4>Row Conditional Tabular GAN</h4>
 </center>
 </div>
 
