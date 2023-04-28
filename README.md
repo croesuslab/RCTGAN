@@ -8,19 +8,21 @@
 <br/>
 <p align="center">
 <a href="https://arxiv.org/abs/2211.07588">
-<img align="center" width=40% src="/rctgan/images/logo_rctgan.PNG"></img>
+<img align="center" width=40% src="/rctgan/images/croesus-lab-horizontal-rouge.png"></img>
 </a>
 </p>
 </div>
-
+<center>
+    <font  size="7">RC-TGAN</font><br>
+    <font  size="3">Row Conditional Tabular GAN</font>
+</center>
 </div>
 
 # Overview
 
 The **Row Conditional Tabular GAN (RC-TGAN)** is the first method for generating synthetic relational databases based on GAN in our knowledge. The RC-TGAN models relationship information between tables by incorporating conditional data of parent rows into the design of the child table's GAN. We further extend the RC-TGAN to model the influence that grandparent table rows may have on their grandchild rows, in order to prevent the loss of this connection when the rows of the parent table fail to transfer this relationship information. For more details see our article on arxiv: <a href="https://arxiv.org/abs/2211.07588">Row Conditional-TGAN for Generating Synthetic Relational Databases</a>.
 
-This repository is the implementation of RC-TGAN and is based on <a href="https://github.com/sdv-dev/CTGAN">
-CTGAN project</a> repository.
+This repository is the implementation of RC-TGAN and is based on <a href="https://github.com/sdv-dev/CTGAN"> CTGAN project</a> repository.
 
 # Install
 
@@ -43,7 +45,7 @@ save a hierarchical model. We will cover these two steps in this section using a
 
 ### Step 1: Load dataset and define Metadata
 The dataset we used is <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a>.
-The <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a> dataset is used as example in this tutorial
+The <a href="https://www.tandfonline.com/doi/full/10.1080/08839510490279131">Biodegradability</a> dataset is used as example in this tutorial.
 
 ```python3
 import pandas as pd
