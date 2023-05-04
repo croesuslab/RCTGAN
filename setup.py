@@ -8,8 +8,6 @@ from setuptools import setup, find_packages
 with open('README.md', encoding='utf-8') as readme_file:
     readme = readme_file.read()
 
-with open('HISTORY.md', encoding='utf-8') as history_file:
-    history = history_file.read()
 
 install_requires = [
     'Faker>=3.0.0,<10',
@@ -99,7 +97,7 @@ setup(
     include_package_data=True,
     install_requires=install_requires,
     keywords='rctgan synthetic-data synhtetic-data-generation multi-table',
-    license='MIT license',
+    license='Apache license',
     long_description=readme + '\n\n' + history,
     long_description_content_type='text/markdown',
     name='rctgan',
