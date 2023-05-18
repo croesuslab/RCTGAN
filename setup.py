@@ -98,7 +98,7 @@ setup(
     install_requires=install_requires,
     keywords='rctgan synthetic-data synhtetic-data-generation multi-table',
     license='Apache license',
-    long_description=readme + '\n\n' + history,
+    long_description=readme + '\n\n',
     long_description_content_type='text/markdown',
     name='rctgan',
     packages=find_packages(include=['rctgan', 'rctgan.*']),
