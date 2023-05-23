@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 import torch
 from packaging import version
 from torch import optim
@@ -366,7 +367,7 @@ class CTGANSynthesizer(BaseSynthesizer):
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
-        for i in range(epochs):
+        for i in tqdm(range(epochs)):
             for id_ in range(steps_per_epoch):
 
                 for n in range(self._discriminator_steps):
@@ -798,7 +799,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             torch.manual_seed(self.seed)
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
 
-        for i in range(epochs):
+        for i in tqdm(range(epochs)):
             for id_ in range(steps_per_epoch):
 
                 for n in range(self._discriminator_steps):
