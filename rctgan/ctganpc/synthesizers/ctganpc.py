@@ -928,47 +928,45 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 condition_info, self._batch_size)
         else:
             global_condition_vec = None
-        count = 0
-        for p in parent_data.index:
-            parent = pd.DataFrame(np.array(parent_data.loc[p]).reshape(1,len(parent_data.columns)),
-                                  columns=parent_data.columns)
-            parent = np.array(parent)
-            parent = torch.from_numpy(parent.astype('float32')).to(self._device)
-            parent = parent.repeat(self._batch_size, 1)
-            n  = sizes[count]
-            data = []
-            steps = n // self._batch_size + 1
-            for i in range(steps):
-                mean = torch.zeros(self._batch_size, self._embedding_dim)
-                std = mean + 1
-                fakez = torch.normal(mean=mean, std=std).to(self._device)
-    
-                if global_condition_vec is not None:
-                    condvec = global_condition_vec.copy()
-                else:
-                    condvec = self._data_sampler.sample_original_condvec(self._batch_size)
-    
-                if condvec is None:
-                    pass
-                else:
-                    c1 = condvec
-                    c1 = torch.from_numpy(c1).to(self._device)
-                    fakez = torch.cat([fakez, c1], dim=1)
-                
-                input_generator = torch.cat([fakez, parent], dim=1)
-                fake = self._generator(input_generator)
-                fakeact = self._apply_activate(fake)
-                data.append(fakeact.detach().cpu().numpy())
-    
-            data = np.concatenate(data, axis=0)
-            data = self._transformer.inverse_transform(data[:n])
-            data["Parent_index"] = p 
-            if count==0:
-                data_gobal = pd.DataFrame(columns=list(data.columns))
-                data_gobal = data_gobal.append(data)
-            else:
-                data_gobal = data_gobal.append(data)
-            count+=1
+        
+        if sizes==[1]:
+            parent = self.dupli_rows(parent_data, [2])
+        else:
+            parent = self.dupli_rows(parent_data, sizes)
+        parent = np.array(parent)
+        parent = torch.from_numpy(parent.astype('float32')).to(self._device)
+
+        n  = len(parent)
+        mean = torch.zeros(n, self._embedding_dim)
+        std = mean + 1
+        fakez = torch.normal(mean=mean, std=std).to(self._device)
+
+        if global_condition_vec is not None:
+            condvec = global_condition_vec.copy()
+        else:
+            condvec = self._data_sampler.sample_original_condvec(n)
+
+        if condvec is None:
+            pass
+        else:
+            c1 = condvec
+            c1 = torch.from_numpy(c1).to(self._device)
+            fakez = torch.cat([fakez, c1], dim=1)
+
+        input_generator = torch.cat([fakez, parent], dim=1)
+        fake = self._generator(input_generator)
+        fakeact = self._apply_activate(fake)
+        data = fakeact.detach().cpu().numpy()
+
+        if sizes==[1]:
+            n=1
+        data = self._transformer.inverse_transform(data[:n])
+        if sum(sizes)==len(sizes):
+            data["Parent_index"] = range(len(data))
+        else:
+            data["Parent_index"] = self.dupli_rows(pd.DataFrame(parent_data.index, columns=['__index__']), sizes)['__index__']
+        data_gobal = pd.DataFrame(columns=list(data.columns))
+        data_gobal = data_gobal.append(data)
         data_gobal.index = range(len(data_gobal))
         
         return data_gobal
