@@ -182,16 +182,10 @@ metadata.add_relationship(parent='molecule', child='atom')
 
 ### 2. Fit a model using the RCTGAN API.
 
-First, we build a hierarchical statistical model of the data using **RCTGAN**. For this we will
-create an instance of the `rctgan.RCTGAN` class and use its `fit` method.
-
 During this process, **RCTGAN** will traverse across all the tables in your dataset following the
-primary key-foreign key relationships and learn the probability distributions of the values in
-the columns.
+primary key-foreign key relationships and learn the (conditional) GAN able to generate synthetic data from those tables.
 
 ```python3
-from rctgan import RCTGAN
-
 model = RCTGAN(metadata)
 model.fit(tables)
 ```

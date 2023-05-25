@@ -18,6 +18,7 @@ install_requires = [
     'tqdm>=4.15,<5',
     'rdt>=0.6.1,<0.7',
     'sdmetrics>=0.4.1,<0.5',
+    'tqdm>=4.63.0,<4.64.1'
 ]
 
 pomegranate_requires = [
