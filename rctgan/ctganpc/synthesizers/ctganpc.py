@@ -893,6 +893,26 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         if self.plot_loss:
             plt.show()
 
+    def dupli_rows(self, data, size_list):
+        if len(data)==len(size_list):
+            df = data.copy()
+            df.index = range(len(df))
+            df['index_prim_key'] = range(len(df))
+            size_list_2 = []
+            for k in range(len(size_list)):
+                s = size_list[k]
+                size_list_2 += [k]*s
+            index_prim_key = pd.DataFrame(size_list_2, columns=['index_prim_key'])
+            df = index_prim_key.merge(df, on=['index_prim_key'], how='left')
+            df = df.drop(['index_prim_key'], axis=1)
+            return df
+        else:
+            return None
+        
+
+    def divide_chunks(self, l, n):
+        return [l[i:i + n] for i in range(0, len(l), n)]
+
     @random_state
     def sample(self, sizes, parent_data, condition_column=None, condition_value=None):
         """Sample data similar to the training data.
@@ -929,42 +949,49 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         else:
             global_condition_vec = None
         
-        if sizes==[1]:
-            parent = self.dupli_rows(parent_data, [2])
-        else:
-            parent = self.dupli_rows(parent_data, sizes)
-        parent = np.array(parent)
-        parent = torch.from_numpy(parent.astype('float32')).to(self._device)
+        parent_data_dupli = self.dupli_rows(parent_data, sizes)
 
-        n  = len(parent)
-        mean = torch.zeros(n, self._embedding_dim)
-        std = mean + 1
-        fakez = torch.normal(mean=mean, std=std).to(self._device)
+        n_rows  = len(parent_data_dupli)
+        if_first = True
+        for parent in self.divide_chunks(parent_data_dupli, self._batch_size):
+            if len(parent)==1:
+                parent.append(parent, ignore_index=True)
+            n = len(parent)
+            parent_2 = np.array(parent)
+            parent_2 = torch.from_numpy(parent_2.astype('float32')).to(self._device)
 
-        if global_condition_vec is not None:
-            condvec = global_condition_vec.copy()
-        else:
-            condvec = self._data_sampler.sample_original_condvec(n)
+            mean = torch.zeros(n, self._embedding_dim)
+            std = mean + 1
+            fakez = torch.normal(mean=mean, std=std).to(self._device)
 
-        if condvec is None:
-            pass
-        else:
-            c1 = condvec
-            c1 = torch.from_numpy(c1).to(self._device)
-            fakez = torch.cat([fakez, c1], dim=1)
+            if global_condition_vec is not None:
+                condvec = global_condition_vec.copy()
+            else:
+                condvec = self._data_sampler.sample_original_condvec(n)
 
-        input_generator = torch.cat([fakez, parent], dim=1)
-        fake = self._generator(input_generator)
-        fakeact = self._apply_activate(fake)
-        data = fakeact.detach().cpu().numpy()
+            if condvec is None:
+                pass
+            else:
+                c1 = condvec
+                c1 = torch.from_numpy(c1).to(self._device)
+                fakez = torch.cat([fakez, c1], dim=1)
 
-        if sizes==[1]:
-            n=1
-        data = self._transformer.inverse_transform(data[:n])
+            input_generator = torch.cat([fakez, parent_2], dim=1)
+            fake = self._generator(input_generator)
+            fakeact = self._apply_activate(fake)
+            if if_first:
+                if_first = False
+                data = fakeact
+            else:
+                data = torch.cat([data, fakeact], dim=0)
+        
+        data = data.detach().cpu().numpy()
+        data = self._transformer.inverse_transform(data[:n_rows])
         if sum(sizes)==len(sizes):
             data["Parent_index"] = range(len(data))
         else:
             data["Parent_index"] = self.dupli_rows(pd.DataFrame(parent_data.index, columns=['__index__']), sizes)['__index__']
+
         data_gobal = pd.DataFrame(columns=list(data.columns))
         data_gobal = data_gobal.append(data)
         data_gobal.index = range(len(data_gobal))
