@@ -955,7 +955,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         if_first = True
         for parent in self.divide_chunks(parent_data_dupli, self._batch_size):
             if len(parent)==1:
-                parent.append(parent, ignore_index=True)
+                parent = parent.append(parent, ignore_index=True)
             n = len(parent)
             parent_2 = np.array(parent)
             parent_2 = torch.from_numpy(parent_2.astype('float32')).to(self._device)
