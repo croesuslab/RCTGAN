@@ -956,8 +956,8 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             if len(parent)==1:
                 parent = parent.append(parent, ignore_index=True)
             n = len(parent)
-            parent_2 = np.array(parent)
-            parent_2 = torch.from_numpy(parent_2.astype('float32')).to(self._device)
+            parent_to_torch = np.array(parent)
+            parent_to_torch = torch.from_numpy(parent_to_torch.astype('float32')).to(self._device)
 
             mean = torch.zeros(n, self._embedding_dim)
             std = mean + 1
@@ -975,7 +975,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                 c1 = torch.from_numpy(c1).to(self._device)
                 fakez = torch.cat([fakez, c1], dim=1)
 
-            input_generator = torch.cat([fakez, parent_2], dim=1)
+            input_generator = torch.cat([fakez, parent_to_torch], dim=1)
             fake = self._generator(input_generator)
             fakeact = self._apply_activate(fake)
             if if_first:
