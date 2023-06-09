@@ -981,11 +981,10 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             fakeact = self._apply_activate(fake)
             if if_first:
                 if_first = False
-                data = fakeact
+                data = fakeact.detach().cpu().numpy()
             else:
-                data = torch.cat([data, fakeact], dim=0)
+                data = np.concatenate((data, fakeact.detach().cpu().numpy()), axis=0)
         
-        data = data.detach().cpu().numpy()
         data = self._transformer.inverse_transform(data[:n_rows])
         if sum(sizes)==len(sizes):
             data["Parent_index"] = range(len(data))
