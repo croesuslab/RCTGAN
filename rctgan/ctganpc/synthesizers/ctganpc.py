@@ -896,7 +896,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
     def dupli_rows(self, data, size_list):
         if len(data)==len(size_list):
             df = data.copy()
-            df.index = range(len(df))
             df['index_prim_key'] = range(len(df))
             size_list_2 = []
             for k in range(len(size_list)):
