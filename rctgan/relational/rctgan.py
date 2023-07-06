@@ -55,7 +55,14 @@ class RCTGAN:
                        "pac": 10,
                        "cuda": True,
                        "plot_loss": False,
-                       "grand_parent": True
+                       "grand_parent": True,
+                       "field_transformers": None,
+                       "anonymize_fields": None,
+                       "constraints": None,
+                       "table_metadata": None,
+                       "rounding": 'auto', 
+                       'min_value': 'auto', 
+                       'max_value': 'auto'
                       }
         if self.hyperparam==None:
             self.hyperparam = {}
@@ -224,7 +231,14 @@ class RCTGAN:
                               pac=self.hyperparam[table_name]["pac"], 
                               cuda=self.hyperparam[table_name]["cuda"],
                               plot_loss=self.hyperparam[table_name]["plot_loss"],
-                              seed=self.seed)
+                              seed=self.seed,
+                              field_transformers=self.hyperparam[table_name]["field_transformers"],
+                              anonymize_fields=self.hyperparam[table_name]["anonymize_fields"],
+                              constraints=self.hyperparam[table_name]["constraints"],
+                              table_metadata=self.hyperparam[table_name]["table_metadata"],
+                              rounding=self.hyperparam[table_name]["rounding"],
+                              min_value=self.hyperparam[table_name]["min_value"],
+                              max_value=self.hyperparam[table_name]["max_value"])
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
                 temp_table = tables[table_name][[prim_key]+col_table].copy()
@@ -279,7 +293,14 @@ class RCTGAN:
                                  pac=self.hyperparam[table_name]["pac"], 
                                  cuda=self.hyperparam[table_name]["cuda"],
                                  plot_loss=self.hyperparam[table_name]["plot_loss"],
-                                 seed=self.seed)
+                                 seed=self.seed,
+                                 field_transformers=self.hyperparam[table_name]["field_transformers"],
+                                anonymize_fields=self.hyperparam[table_name]["anonymize_fields"],
+                                constraints=self.hyperparam[table_name]["constraints"],
+                                table_metadata=self.hyperparam[table_name]["table_metadata"],
+                                rounding=self.hyperparam[table_name]["rounding"],
+                                min_value=self.hyperparam[table_name]["min_value"],
+                                max_value=self.hyperparam[table_name]["max_value"])
                     
                 col_table = self.transformers[table_name]["columns"]
                 children = list(self.metadata.get_children(table_name))
