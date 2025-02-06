@@ -1,0 +1,23 @@
+embedding_dim: 128
+generator_dim: [256, 256]
+discriminator_dim: [256, 256]
+generator_lr: 0.0002
+generator_decay: 0.000001
+discriminator_lr: 0.0002
+discriminator_decay: 0.000001
+batch_size: 500
+discriminator_steps: 1
+log_frequency: True
+verbose: False
+epochs: 1000
+pac: 10
+cuda: True
+plot_loss: False
+grand_parent: True
+field_transformers: null
+anonymize_fields: null
+constraints: null
+table_metadata: null
+rounding: auto
+min_value: auto
+max_value: auto

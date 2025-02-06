@@ -1,0 +1,33 @@
+atom_fields:
+  atom_id:
+    type: id
+    subtype: string
+  molecule_id:
+    type: id
+    subtype: string
+  type:
+    type: categorical
+
+bond_fields:
+  atom_id:
+    type: id
+    subtype: string
+  atom_id2:
+    type: id
+    subtype: string
+  type:
+    type: categorical
+
+molecule_fields:
+  molecule_id:
+    type: id
+    subtype: string
+  activity:
+    type: numerical
+    subtype: float
+  logp:
+    type: numerical
+    subtype: float
+  mweight:
+    type: numerical
+    subtype: float

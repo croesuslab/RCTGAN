@@ -6,29 +6,10 @@ from collections import defaultdict
 from copy import deepcopy
 
 import yaml
-
+from rctgan.utils.dataclass import Config
 from rctgan.rdt2.errors import Error, NotFittedError
 from rctgan.rdt2.transformers import (
     BaseTransformer, get_default_transformer, get_transformer_instance, get_transformers_by_type)
-
-
-class Config(dict):
-    """Config dict for ``HyperTransformer`` with a better representation."""
-
-    def __repr__(self):
-        """Pretty print the dictionary."""
-        config = {
-            'sdtypes': self['sdtypes'],
-            'transformers': {k: repr(v) for k, v in self['transformers'].items()}
-        }
-
-        printed = json.dumps(config, indent=4)
-        for transformer in self['transformers'].values():
-            quoted_transformer = f'"{transformer}"'
-            if quoted_transformer in printed:
-                printed = printed.replace(quoted_transformer, repr(transformer))
-
-        return printed
 
 
 class HyperTransformer:
@@ -240,15 +221,9 @@ class HyperTransformer:
             )
 
     @staticmethod
-    def _validate_config(config):
-        if set(config.keys()) != {'sdtypes', 'transformers'}:
-            raise Error(
-                'Error: Invalid config. Please provide 2 dictionaries '
-                "named 'sdtypes' and 'transformers'."
-            )
-
-        sdtypes = config['sdtypes']
-        transformers = config['transformers']
+    def _validate_config(config: Config):
+        sdtypes = config.sdtypes
+        transformers = config.transformers
         if set(sdtypes.keys()) != set(transformers.keys()):
             raise Error(
                 "The column names in the 'sdtypes' dictionary must match the "
@@ -280,7 +255,7 @@ class HyperTransformer:
                 "config. Use 'set_config()' to write and set your entire config at once."
             )
 
-    def set_config(self, config):
+    def set_config(self, config: Config):
         """Set the ``HyperTransformer`` configuration.
 
         This method will only update the sdtypes/transformers passed. Other previously
@@ -293,8 +268,8 @@ class HyperTransformer:
                 - transformers: A dictionary mapping column names to their transformer instances.
         """
         self._validate_config(config)
-        self.field_sdtypes.update(config['sdtypes'])
-        self.field_transformers.update(config['transformers'])
+        self.field_sdtypes.update(config.sdtypes)
+        self.field_transformers.update(config.transformers)
         self._modified_config = True
         if self._fitted:
             warnings.warn(self._REFIT_MESSAGE)

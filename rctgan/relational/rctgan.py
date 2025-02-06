@@ -5,16 +5,19 @@ Created on Mon Jun 20 14:09:24 2022
 @author: mohamedg
 """
 from rctgan.rdt2 import HyperTransformer
-from rctgan.rdt2.transformers.numerical import FloatFormatter, GaussianNormalizer
-from rctgan.rdt2.transformers.categorical import FrequencyEncoder, OneHotEncoder
-from rctgan.rdt2.transformers.datetime import OptimizedTimestampEncoder
+from rctgan.rdt2.transformers import TransformerFactory
 import itertools
 from rctgan.tabular import CTGAN, PC_CTGAN
+from rctgan.utils import load_yaml_to_dict
+from rctgan.utils.dataclass import Config 
+from rctgan.utils.enums import FieldType, TransformerType
 import pandas as pd
 import numpy as np
 import random
 from scipy.stats import truncnorm, kstest
 import sys
+import os
+import logging
 
 class RCTGAN:
     def __init__(self, metadata=None, hyperparam=None, current_table=None,
@@ -40,42 +43,19 @@ class RCTGAN:
         self.seed = seed
     
     def default_hyperparam(self):
-        default_hyp = {"embedding_dim": 128,
-                       "generator_dim": (256, 256),
-                       "discriminator_dim": (256, 256),
-                       "generator_lr": 2e-4,
-                       "generator_decay": 1e-6,
-                       "discriminator_lr": 2e-4,
-                       "discriminator_decay": 1e-6,
-                       "batch_size": 500,
-                       "discriminator_steps": 1,
-                       "log_frequency": True,
-                       "verbose": False,
-                       "epochs": 1000,
-                       "pac": 10,
-                       "cuda": True,
-                       "plot_loss": False,
-                       "grand_parent": True,
-                       "field_transformers": None,
-                       "anonymize_fields": None,
-                       "constraints": None,
-                       "table_metadata": None,
-                       "rounding": 'auto', 
-                       'min_value': 'auto', 
-                       'max_value': 'auto'
-                      }
-        if self.hyperparam==None:
-            self.hyperparam = {}
-            for table_name in list(self.metadata.get_tables()):
-                self.hyperparam[table_name] = default_hyp
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        yaml_path = os.path.join(script_dir, 'hyperparam.yml')
+        
+        logging.info(f"Loading default hyperparameters from {yaml_path}")
+        default_hyp = load_yaml_to_dict(yaml_path)
+        
+        if self.hyperparam is None:
+            self.hyperparam = {table_name: default_hyp.copy() for table_name in self.metadata.get_tables()}
         else:
-            for table_name in list(self.metadata.get_tables()):
-                if not table_name in list(self.hyperparam.keys()):
-                    self.hyperparam[table_name] = default_hyp
-                else:
-                    for hyp in list(default_hyp.keys()):
-                        if not hyp in list(self.hyperparam[table_name].keys()):
-                            self.hyperparam[table_name][hyp] = default_hyp[hyp]
+            for table_name in self.metadata.get_tables():
+                self.hyperparam.setdefault(table_name, default_hyp.copy())
+                for hyp, value in default_hyp.items():
+                    self.hyperparam[table_name].setdefault(hyp, value)
     
     
     def set_hyperparam(self, hyper):
@@ -89,45 +69,41 @@ class RCTGAN:
         self.hyperparam[table_name] = tab_hyper
         self.default_hyperparam()
     
-    def rdt2_transform(self, meta_fields, table, field_deleted=[]): # meta_fields = metadata.get_table_meta('store')['fields']
+    def rdt2_transform(self, meta_fields, table, field_deleted=[]):
         ht = HyperTransformer()
-        config_dict = {"sdtypes": {}, "transformers": {}}
+        config = Config()
         col_retained = []
-        for field in meta_fields.keys():
+
+        for field, meta in meta_fields.items():
             if field not in field_deleted:
-                if meta_fields[field]['type'] == 'categorical':
+                field_name= meta['type']
+                if field_name in FieldType._value2member_map_:
+                    field_type = FieldType(field_name)
                     col_retained.append(field)
-                    config_dict["sdtypes"][field] =  'categorical'
-                    if self.ohe_for_parent:
-                        config_dict["transformers"][field] =  OneHotEncoder()
+                    config.sdtypes[field] = field_type.value
+
+                    if field_type == FieldType.DATETIME:
+                        format_datetime = meta['format']
+                        transformer = TransformerFactory.get_transformer(field_type, format_datetime=format_datetime)
                     else:
-                        config_dict["transformers"][field] =  FrequencyEncoder(add_noise=True)
-                elif meta_fields[field]['type'] == 'numerical':
-                    col_retained.append(field)
-                    config_dict["sdtypes"][field] =  'numerical'
-                    if self.num_transformers=='gaussian':
-                        config_dict["transformers"][field] =  GaussianNormalizer()
-                    elif self.num_transformers=='float':
-                        config_dict["transformers"][field] =  FloatFormatter(missing_value_replacement='mean')
-                    else:
-                        config_dict["transformers"][field] =  GaussianNormalizer()
-                    
-                elif meta_fields[field]['type'] == 'datetime':
-                    col_retained.append(field)
-                    config_dict["sdtypes"][field] =  'datetime'
-                    format_datetime = meta_fields[field]['format']
-                    config_dict["transformers"][field] =  OptimizedTimestampEncoder(missing_value_replacement='mean', datetime_format=format_datetime)
-        ht.set_config(config=config_dict)
+                        transformer_type = TransformerType.ONE_HOT_ENCODER if self.ohe_for_parent else TransformerType.FREQUENCY_ENCODER
+                        if field_type == FieldType.NUMERICAL:
+                            transformer_type = TransformerType.GAUSSIAN_NORMALIZER if self.num_transformers == 'gaussian' else TransformerType.FLOAT_FORMATTER
+                        transformer = TransformerFactory.get_transformer(field_type, transformer_type)
+                        
+                    config.transformers[field] = transformer
+
+        ht.set_config(config=config)
         ht.fit(table[col_retained])
         return ht, col_retained
     
     def gaussian_ht(self, table_transormed):
         ht = HyperTransformer()
-        config_dict = {"sdtypes": {}, "transformers": {}}
+        config = Config()
         for col in table_transormed.columns:
-            config_dict["sdtypes"][col] =  'numerical'
-            config_dict["transformers"][col] =  GaussianNormalizer()
-        ht.set_config(config=config_dict)
+            config.sdtypes[col] =  FieldType.NUMERICAL.value
+            config.transformers[col] =  TransformerFactory.get_transformer(FieldType.NUMERICAL, TransformerType.GAUSSIAN_NORMALIZER)
+        ht.set_config(config=config)
         ht.fit(table_transormed)
         return ht
     

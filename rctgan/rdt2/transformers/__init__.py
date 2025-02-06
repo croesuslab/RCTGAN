@@ -16,6 +16,7 @@ from rctgan.rdt2.transformers.datetime import OptimizedTimestampEncoder, UnixTim
 from rctgan.rdt2.transformers.null import NullTransformer
 from rctgan.rdt2.transformers.numerical import ClusterBasedNormalizer, FloatFormatter, GaussianNormalizer
 from rctgan.rdt2.transformers.pii.anonymizer import AnonymizedFaker
+from rctgan.rdt2.transformers.transformers_factory import TransformerFactory
 
 __all__ = [
     'BaseTransformer',
@@ -36,6 +37,7 @@ __all__ = [
     'get_transformers_by_type',
     'get_default_transformers',
     'get_default_transformer',
+    'TransformerFactory'
 ]
 
 
