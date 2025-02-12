@@ -4,6 +4,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import polars as pl
+from typing import Dict, Union
 import psutil
 from scipy.stats import norm
 
@@ -33,7 +35,7 @@ class FrequencyEncoder(BaseTransformer):
     """
 
     INPUT_SDTYPE = 'categorical'
-    OUTPUT_SDTYPES = {'value': 'float'}
+    OUTPUT_SDTYPES = pl.Float64
     DETERMINISTIC_REVERSE = True
     COMPOSITION_IS_IDENTITY = True
 
@@ -76,58 +78,57 @@ class FrequencyEncoder(BaseTransformer):
         return self.COMPOSITION_IS_IDENTITY and not self.add_noise
 
     @staticmethod
-    def _get_intervals(data):
+    def _get_intervals(data: pl.Series) -> Dict:
         """Compute intervals for each categorical value.
-
+    
         Args:
-            data (pandas.Series):
+            data (pl.Series):
                 Data to analyze.
-
+    
         Returns:
             dict:
                 intervals for each categorical value (start, end).
         """
-        data = data.fillna(np.nan)
-        frequencies = data.value_counts(dropna=False)
+        data = data.fill_null(np.nan)
+        frequencies = data.value_counts().sort('category')
 
         start = 0
         end = 0
         elements = len(data)
 
         intervals = {}
-        means = []
+        means = {}
         starts = []
-        for value, frequency in frequencies.items():
+        for value, frequency in zip(frequencies['category'], frequencies['count']):
             prob = frequency / elements
             end = start + prob
             mean = start + prob / 2
             std = prob / 6
-            if pd.isna(value):
+            if value is None:
                 value = np.nan
 
             intervals[value] = (start, end, mean, std)
-            means.append(mean)
+            means[value] = mean
             starts.append((value, start))
             start = end
 
-        means = pd.Series(means, index=list(frequencies.keys()))
-        starts = pd.DataFrame(starts, columns=['category', 'start']).set_index('start')
+        starts = pl.DataFrame({"category": [s[0] for s in starts], "start": [s[1] for s in starts]}, strict=False)
 
         return intervals, means, starts
 
-    def _fit(self, data):
+    def _fit(self, data: pl.Series) -> None:
         """Fit the transformer to the data.
-
+    
         Compute the intervals for each categorical value.
-
+    
         Args:
-            data (pandas.Series):
+            data (pl.Series):
                 Data to fit the transformer to.
         """
         self.dtype = data.dtype
         self.intervals, self.means, self.starts = self._get_intervals(data)
 
-    def _transform_by_category(self, data):
+    def _transform_by_category(self, data: pl.Series) -> np.ndarray:
         """Transform the data by iterating over the different categories."""
         result = np.empty(shape=(len(data), ), dtype=float)
 
@@ -135,7 +136,7 @@ class FrequencyEncoder(BaseTransformer):
         for category, values in self.intervals.items():
             mean, std = values[2:]
             if category is np.nan:
-                mask = data.isna()
+                mask = data.is_null()
             else:
                 mask = (data.to_numpy() == category)
 
@@ -146,9 +147,9 @@ class FrequencyEncoder(BaseTransformer):
 
         return result
 
-    def _get_value(self, category):
+    def _get_value(self, category: str) -> float:
         """Get the value that represents this category."""
-        if pd.isna(category):
+        if category is None or category is np.nan:
             category = np.nan
 
         mean, std = self.intervals[category][2:]
@@ -158,89 +159,99 @@ class FrequencyEncoder(BaseTransformer):
 
         return mean
 
-    def _transform_by_row(self, data):
-        """Transform the data row by row."""
-        return data.fillna(np.nan).apply(self._get_value).to_numpy()
+    def _transform_by_row(self, data: pl.Series) -> np.ndarray:
+        mapping = {k: self._get_value(k) for k in self.intervals}
+        
+        return data.fill_null(np.nan).map_elements(lambda x: mapping.get(x, np.nan), self.OUTPUT_SDTYPES).to_numpy()
 
-    def _transform(self, data):
-        """Transform the categorical values to float representatives.
+    def _transform(self, data: pl.Series) -> np.ndarray:
+        """Transform categorical values to float representatives.
 
         Args:
-            data (pandas.Series):
-                Data to transform.
+            data (pl.Series): Data to transform.
 
         Returns:
-            numpy.ndarray
+            np.ndarray
         """
-        fit_categories = pd.Series(self.intervals.keys())
-        has_nan = pd.isna(fit_categories).any()
-        unseen_indexes = ~(data.isin(fit_categories) | (pd.isna(data) & has_nan))
-        if unseen_indexes.any():
-            # Select only the first 5 unseen categories to avoid flooding the console.
-            unseen_categories = set(data[unseen_indexes][:5])
+
+        fit_categories = pl.Series(list(self.intervals.keys()))  # Polars Series
+        has_nan = fit_categories.is_null().any()  # Polars is_null
+        unseen_mask = ~(data.is_in(fit_categories) | (data.is_null() & has_nan))  # Polars is_in and is_null
+
+        if unseen_mask.any():
+            unseen_categories = data.filter(unseen_mask).slice(0, 5).to_list() # Polars filtering and slicing
             warnings.warn(
-                f'The data contains {unseen_indexes.sum()} new categories that were not '
+                f'The data contains {unseen_mask.sum()} new categories that were not '
                 f'seen in the original data (examples: {unseen_categories}). Assigning '
                 'them random values. If you want to model new categories, '
                 'please fit the transformer again with the new data.'
             )
 
-        data[unseen_indexes] = np.random.choice(fit_categories, size=unseen_indexes.size)
+            # Polars assignment with mask
+            data = data.with_columns(
+                pl.when(unseen_mask)
+              .then(pl.Series(np.random.choice(fit_categories.to_numpy(), size=unseen_mask.sum())))
+              .otherwise(pl.col("category")) # Keep original value if not unseen
+              .alias("category")
+            )
+            
         if len(self.means) < len(data):
             return self._transform_by_category(data)
 
         return self._transform_by_row(data)
 
-    def _reverse_transform_by_matrix(self, data):
+    def _reverse_transform_by_matrix(self, data: pl.Series) -> pl.Series:
         """Reverse transform the data with matrix operations."""
         num_rows = len(data)
         num_categories = len(self.means)
 
-        data = np.broadcast_to(data, (num_categories, num_rows)).T
-        means = np.broadcast_to(self.means, (num_rows, num_categories))
-        diffs = np.abs(data - means)
+        data_np = np.broadcast_to(data.to_numpy(), (num_categories, num_rows)).T
+        means_np = np.tile(np.array([self.means[cat] for cat in self.means.keys()]), (num_rows, 1)) 
+        diffs = np.abs(data_np - means_np)
         indexes = np.argmin(diffs, axis=1)
 
-        self._get_category_from_index = list(self.means.index).__getitem__
-        return pd.Series(indexes).apply(self._get_category_from_index).astype(self.dtype)
+        self._get_category_from_index = list(self.means.keys())
+        reversed_data = [self._get_category_from_index[idx] for idx in indexes]
+        return pl.Series(reversed_data, dtype=self.dtype, strict=False)
 
-    def _reverse_transform_by_category(self, data):
+    def _reverse_transform_by_category(self, data: pl.Series) -> pl.Series:
         """Reverse transform the data by iterating over all the categories."""
-        result = np.empty(shape=(len(data), ), dtype=self.dtype)
 
-        # loop over categories
+        result = np.full(len(data), np.nan, dtype=object)
+
         for category, values in self.intervals.items():
-            start = values[0]
-            mask = (start <= data.to_numpy())
+            start, end, _, _ = values
+            mask = (start <= data.to_numpy()) & (data.to_numpy() < end)
             result[mask] = category
+            
 
-        return pd.Series(result, index=data.index, dtype=self.dtype)
+        return pl.Series(result, dtype=self.dtype)
 
     def _get_category_from_start(self, value):
-        lower = self.starts.loc[:value]
-        return lower.iloc[-1].category
+        lower = self.starts.filter(pl.col("start") <= value)
+        return lower[-1, "category"]
 
-    def _reverse_transform_by_row(self, data):
+    def _reverse_transform_by_row(self, data: pl.Series) -> pl.Series:
         """Reverse transform the data by iterating over each row."""
-        return data.apply(self._get_category_from_start).astype(self.dtype)
+        return data.map_elements(self._get_category_from_start, return_dtype=self.dtype)
 
-    def _reverse_transform(self, data):
+    def _reverse_transform(self, data: pl.Series) -> pl.Series:
         """Convert float values back to the original categorical values.
 
         Args:
-            data (pd.Series):
-                Data to revert.
+            data (pl.Series): Data to revert.
 
         Returns:
-            pandas.Series
+            pl.Series
         """
         data = data.clip(0, 1)
+
         num_rows = len(data)
         num_categories = len(self.means)
-
-        # total shape * float size * number of matrices needed
+        
         needed_memory = num_rows * num_categories * 8 * 3
         available_memory = psutil.virtual_memory().available
+
         if available_memory > needed_memory:
             return self._reverse_transform_by_matrix(data)
 
@@ -280,7 +291,7 @@ class OneHotEncoder(BaseTransformer):
         otherwise returns it.
 
         Args:
-            data (pandas.Series or pandas.DataFrame):
+            data (pl.Series or pl.DataFrame):
                 Data to prepare.
 
         Returns:
@@ -310,37 +321,37 @@ class OneHotEncoder(BaseTransformer):
 
         return self._add_prefix(output_sdtypes)
 
-    def _fit(self, data):
+    def _fit(self, data: pl.Series) -> None:
         """Fit the transformer to the data.
 
-        Get the pandas `dummies` which will be used later on for OneHotEncoding.
+        Get the polars `dummies` which will be used later on for OneHotEncoding.
 
         Args:
-            data (pandas.Series or pandas.DataFrame):
+            data (pl.Series or pl.DataFrame):
                 Data to fit the transformer to.
         """
         data = self._prepare_data(data)
 
-        null = pd.isna(data)
-        self._uniques = list(pd.unique(data[~null]))
+        null = data.is_null()
+        self._uniques = list(data.filter(~null).unique().sort())
         self._dummy_na = null.any()
         self._num_dummies = len(self._uniques)
         self._indexer = list(range(self._num_dummies))
         self.dummies = self._uniques.copy()
 
-        if not np.issubdtype(data.dtype, np.number):
+        if not data.dtype.is_numeric:
             self._dummy_encoded = True
 
         if self._dummy_na:
             self.dummies.append(np.nan)
 
-    def _transform_helper(self, data):
+    def _transform_helper(self, data: pl.Series) -> np.ndarray:
         if self._dummy_encoded:
             coder = self._indexer
-            codes = pd.Categorical(data, categories=self._uniques).codes
+            codes = pl.Categorical(data, categories=self._uniques).to_physical().to_numpy()
         else:
             coder = self._uniques
-            codes = data
+            codes = data.to_numpy()
 
         rows = len(data)
         dummies = np.broadcast_to(coder, (rows, self._num_dummies))
@@ -349,7 +360,7 @@ class OneHotEncoder(BaseTransformer):
 
         if self._dummy_na:
             null = np.zeros((rows, 1), dtype=int)
-            null[pd.isna(data)] = 1
+            null[data.is_null().to_numpy()] = 1
             array = np.append(array, null, axis=1)
 
         return array
@@ -358,14 +369,14 @@ class OneHotEncoder(BaseTransformer):
         """Replace each category with the OneHot vectors.
 
         Args:
-            data (pandas.Series, list or list of lists):
+            data (pl.Series, list or list of lists):
                 Data to transform.
 
         Returns:
-            numpy.ndarray
+            np.ndarray
         """
         data = self._prepare_data(data)
-        unique_data = {np.nan if pd.isna(x) else x for x in pd.unique(data)}
+        unique_data = {np.nan if x is None else x for x in data.unique()}
         unseen_categories = unique_data - set(self.dummies)
         if unseen_categories:
             # Select only the first 5 unseen categories to avoid flooding the console.
@@ -383,11 +394,11 @@ class OneHotEncoder(BaseTransformer):
         """Convert float values back to the original categorical values.
 
         Args:
-            data (pd.Series or numpy.ndarray):
+            data (pl.Series or np.ndarray):
                 Data to revert.
 
         Returns:
-            pandas.Series
+            pl.Series
         """
         if not isinstance(data, np.ndarray):
             data = data.to_numpy()
@@ -396,8 +407,9 @@ class OneHotEncoder(BaseTransformer):
             data = data.reshape(-1, 1)
 
         indices = np.argmax(data, axis=1)
+        reversed_data = [self.dummies[idx] for idx in indices]
 
-        return pd.Series(indices).map(self.dummies.__getitem__)
+        return pl.Series(reversed_data)
 
 
 class LabelEncoder(BaseTransformer):
@@ -416,8 +428,8 @@ class LabelEncoder(BaseTransformer):
             integer value.
     """
 
-    INPUT_SDTYPE = 'categorical'
-    OUTPUT_SDTYPES = {'value': 'integer'}
+    INPUT_SDTYPE = pl.String
+    OUTPUT_SDTYPES = pl.Int64
     DETERMINISTIC_TRANSFORM = True
     DETERMINISTIC_REVERSE = True
     COMPOSITION_IS_IDENTITY = True
@@ -425,7 +437,7 @@ class LabelEncoder(BaseTransformer):
     values_to_categories = None
     categories_to_values = None
 
-    def _fit(self, data):
+    def _fit(self, data: pl.Series) -> None:
         """Fit the transformer to the data.
 
         Generate a unique integer representation for each category and
@@ -433,33 +445,33 @@ class LabelEncoder(BaseTransformer):
         `values_to_categories`.
 
         Args:
-            data (pandas.Series):
+            data (pl.Series):
                 Data to fit the transformer to.
         """
-        unique_data = pd.unique(data.fillna(np.nan))
+        unique_data = data.fill_null(np.nan).unique().sort().to_list()
         self.values_to_categories = dict(enumerate(unique_data))
         self.categories_to_values = {
             category: value
             for value, category in self.values_to_categories.items()
         }
 
-    def _transform(self, data):
+    def _transform(self, data: pl.Series) -> pl.Series:
         """Replace each category with its corresponding integer value.
 
         If a category has not been seen before, a random value is assigned.
 
         Args:
-            data (pandas.Series):
+            data (pl.Series):
                 Data to transform.
 
         Returns:
-            pd.Series
+            pl.Series
         """
-        mapped = data.fillna(np.nan).map(self.categories_to_values)
-        is_null = mapped.isna()
+        mapped: pl.Series = data.fill_null(np.nan).map_elements(lambda x: self.categories_to_values.get(x, np.nan), self.OUTPUT_SDTYPES)
+        is_null = mapped.is_null()
         if is_null.any():
             # Select only the first 5 unseen categories to avoid flooding the console.
-            unseen_categories = set(data[is_null][:5])
+            unseen_categories = set(data.filter(is_null).head(5).to_list())
             warnings.warn(
                 f'The data contains {is_null.sum()} new categories that were not '
                 f'seen in the original data (examples: {unseen_categories}). Assigning '
@@ -467,22 +479,23 @@ class LabelEncoder(BaseTransformer):
                 'please fit the transformer again with the new data.'
             )
 
-        mapped[is_null] = np.random.randint(
-            len(self.categories_to_values),
-            size=is_null.sum()
-        )
+            mapped = mapped.map_elements(lambda x: np.random.randint(len(self.categories_to_values)) if np.isnan(x) else x, self.OUTPUT_SDTYPES)
 
-        return mapped.astype('int64')
+        return mapped
 
-    def _reverse_transform(self, data):
+    def _reverse_transform(self, data: pl.Series) -> pl.Series:
         """Convert float values back to the original categorical values.
 
         Args:
-            data (pd.Series or numpy.ndarray):
+            data (pl.Series or np.ndarray):
                 Data to revert.
 
         Returns:
-            pandas.Series
+            pl.Series
         """
-        data = data.clip(min(self.values_to_categories), max(self.values_to_categories))
-        return data.round().map(self.values_to_categories)
+        if isinstance(data, np.ndarray):
+            data = pl.Series(data)
+
+        data = data.clip(lower_bound=min(self.values_to_categories), upper_bound=max(self.values_to_categories))
+        data = data.round(0).map_elements(lambda x: self.values_to_categories.get(x, np.nan), self.INPUT_SDTYPE)
+        return data
