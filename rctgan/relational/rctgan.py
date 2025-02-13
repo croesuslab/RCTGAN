@@ -4,20 +4,21 @@ Created on Mon Jun 20 14:09:24 2022
 
 @author: mohamedg
 """
+import os
+
 from rctgan.rdt2 import HyperTransformer
 from rctgan.rdt2.transformers import TransformerFactory
-import itertools
 from rctgan.tabular import CTGAN, PC_CTGAN
 from rctgan.utils import load_yaml_to_dict
 from rctgan.utils.dataclass import Config 
 from rctgan.utils.enums import FieldType, TransformerType
 import pandas as pd
+import polars as pl
 import numpy as np
 import random
-from scipy.stats import truncnorm, kstest
-import sys
-import os
 import logging
+
+from typing import Dict
 
 class RCTGAN:
     def __init__(self, metadata=None, hyperparam=None, current_table=None,
@@ -41,6 +42,10 @@ class RCTGAN:
         else:
             self.num_transformers = num_transformers
         self.seed = seed
+        
+        if self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
     
     def default_hyperparam(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -102,263 +107,163 @@ class RCTGAN:
         config = Config()
         for col in table_transormed.columns:
             config.sdtypes[col] =  FieldType.NUMERICAL.value
-            config.transformers[col] =  TransformerFactory.get_transformer(FieldType.NUMERICAL, TransformerType.GAUSSIAN_NORMALIZER)
+            config.transformers[col] =  TransformerFactory.get_transformer(
+                FieldType.NUMERICAL, 
+                TransformerType.GAUSSIAN_NORMALIZER
+            )
         ht.set_config(config=config)
         ht.fit(table_transormed)
         return ht
     
-    def transform(self, table_name, table):
+    def transform(self, table_name: str, table: pl.DataFrame):
         col = self.transformers[table_name]["columns"]
-        if self.if_gaussian_ht==False:
-            return self.transformers[table_name]['hypertr'].transform(table[col])
+        if not self.if_gaussian_ht:
+            return self.transformers[table_name]['hypertr'].transform(table.select(pl.col(col)))
         else:
-            return  self.transformers[table_name]['gaussian_ht'].transform(self.transformers[table_name]['hypertr'].transform(table[col]))
+            transformed_table = self.transformers[table_name]['hypertr'].transform(table.select(pl.col(col)))
+            return self.transformers[table_name]['gaussian_ht'].transform(transformed_table)
 
     def keep_data_col(self, meta_fields):
-        col_retained = []
-        for field in meta_fields.keys():
-            if meta_fields[field]['type'] == 'categorical':
-                col_retained.append(field)
-            elif meta_fields[field]['type'] == 'numerical':
-                col_retained.append(field)
-            elif meta_fields[field]['type'] == 'datetime':
-                col_retained.append(field)
-        return col_retained
+        return [field for field, meta in meta_fields.items() if meta['type'] in {
+            FieldType.CATEGORICAL.value, 
+            FieldType.NUMERICAL.value, 
+            FieldType.DATETIME.value
+            }
+        ]
     
-    def parents_input_add(self, table_name, tables, parents_trandformed=None):
-        
-        if str(parents_trandformed)=="None":
+    def parents_input_add(self, table_name: str, tables: dict, parents_transformed=None):
+        if parents_transformed is None:
             count = 0
         else:
-            count = len(parents_trandformed.columns)
+            count = len(parents_transformed.columns)
         parents_name = list(self.metadata.get_parents(table_name))
         for parent_name in parents_name:
             parent_prim_key = self.metadata.get_primary_key(parent_name)
             foreign_keys = list(self.metadata.get_foreign_keys(parent_name, table_name))
-            bool_test = False
-            
-            ht = self.transformers[parent_name]["hypertr"]
-            col = self.transformers[parent_name]["columns"]
-
+    
             for foreign_key in foreign_keys:
-                parent_trandformed = self.transform(parent_name, tables[parent_name])
-                parent_trandformed.columns = ["var_"+str(i) for i in range(1, len(parent_trandformed.columns)+1)]
+                parent_transformed = self.transform(parent_name, tables[parent_name])
+                parent_transformed.columns = ["var_" + str(i) for i in range(1, len(parent_transformed.columns) + 1)]
                 if self.hyperparam[self.current_table]["grand_parent"]:
                     if parent_name in list(self.metadata.get_parents(self.current_table)):
-                        parent_trandformed = self.parents_input_add(parent_name, tables, parent_trandformed)
-                parent_trandformed.columns = ["var_"+str(count+i) for i in range(1, len(parent_trandformed.columns)+1)]
-                temp_serie = pd.DataFrame(tables[table_name][foreign_key].copy())
-                parent_trandformed[foreign_key] = list(tables[parent_name][parent_prim_key])
-                parent_trandformed = temp_serie.merge(parent_trandformed, 
-                                                              on=[foreign_key],
-                                                              how='left', 
-                                                              indicator=True)
-                parent_trandformed = parent_trandformed.drop([foreign_key, '_merge'], axis=1)
-                
-                if str(parents_trandformed)=="None":
-                    parents_trandformed = parent_trandformed.copy()
-                else:
-                    parents_trandformed = parents_trandformed.join(parent_trandformed)
-                count = len(parents_trandformed.columns)
-                del temp_serie
-            del parent_trandformed
-        return parents_trandformed
+                        parent_transformed = self.parents_input_add(parent_name, tables, parent_transformed)
+                parent_transformed.columns = ["var_" + str(count + i) for i in range(1, len(parent_transformed.columns) + 1)]
+                temp_serie = pl.DataFrame({foreign_key: tables[table_name][foreign_key].to_list()})
+                parent_transformed = parent_transformed.with_columns(pl.Series(foreign_key, tables[parent_name][parent_prim_key].to_list()))
+                parent_transformed = temp_serie.join(parent_transformed, on=foreign_key, how='left')
+                parent_transformed = parent_transformed.drop(foreign_key)
     
-    def fit(self, tables):
-        if self.seed is not None:
-            random.seed(self.seed)
-            np.random.seed(self.seed)
-        for table_name in self.metadata.get_tables():
-            children = list(self.metadata.get_children(table_name))
-            self.size_tables[table_name] =len(tables[table_name])
-            if len(children)>0:
-                meta = self.metadata.get_table_meta(table_name)['fields']
+                if parents_transformed is None:
+                    parents_transformed = parent_transformed
+                else:
+                    parents_transformed = parents_transformed.hstack(parent_transformed)
+                count = len(parents_transformed.columns)
+                del temp_serie
+            del parent_transformed
+        return parents_transformed
+    
+    def process_foreign_keys(self, tables: Dict[str, pl.DataFrame], table_name: str, child_name: str, prim_key: str) -> pl.DataFrame:            
+        foreign_keys = list(self.metadata.get_foreign_keys(table_name, child_name))
+        for foreign_key in foreign_keys:
+            temp_child = tables[child_name].group_by(foreign_key, maintain_order=True).agg(
+                pl.count().alias(f"{child_name}_{foreign_key}_nb_occ")
+            )
+            
+            temp_table = tables[table_name].join(temp_child, left_on=prim_key, right_on=foreign_key, how='left')
+            temp_table = temp_table.with_columns(
+                pl.col(f"{child_name}_{foreign_key}_nb_occ").fill_null(0).cast(pl.Int32)
+            )
+            
+            col_name = f"{child_name}_{foreign_key}_nb_occ"
+            
+            self.size_stats[table_name][col_name] = {
+                "min": temp_child[col_name].min(),
+                "max": temp_child[col_name].max(),
+                "mean": temp_child[col_name].mean(),
+                "std": temp_child[col_name].std(),
+            }
+        return temp_table
+    
+    def fit(self, tables : dict):
+        table_names = self.metadata.get_tables()
+        table_meta = {table_name: self.metadata.get_table_meta(table_name)['fields'] for table_name in table_names}
+        table_children = {table_name: list(self.metadata.get_children(table_name)) for table_name in table_names}
+        
+        for table_name in table_names:
+            children = table_children[table_name]
+            self.size_tables[table_name] = len(tables[table_name])
+            meta = table_meta[table_name]
+            
+            if children:
                 ht, col = self.rdt2_transform(meta, tables[table_name])
                 self.transformers[table_name] = {"hypertr": ht, "columns": col}
-                del ht
-                del col
                 if self.if_gaussian_ht:
-                    ht = self.transformers[table_name]['hypertr']
-                    col = self.transformers[table_name]['columns']
                     self.transformers[table_name]['gaussian_ht'] = self.gaussian_ht(ht.transform(tables[table_name][col]))
-
                 self.size_stats[table_name] = {}
             else:
-                meta = self.metadata.get_table_meta(table_name)['fields']
                 self.transformers[table_name] = {"columns": self.keep_data_col(meta)}
-
-        for table_name in self.metadata.get_tables():
+    
+        for table_name in table_names:
             self.current_table = table_name
-            if len(self.metadata.get_parents(table_name)) == 0:
-                prim_key = self.metadata.get_primary_key(table_name)
-                model = CTGAN(primary_key=prim_key, 
-                              embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
-                              generator_dim=self.hyperparam[table_name]["generator_dim"], 
-                              discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
-                              generator_lr=self.hyperparam[table_name]["generator_lr"], 
-                              generator_decay=self.hyperparam[table_name]["generator_decay"], 
-                              discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
-                              discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
-                              batch_size=self.hyperparam[table_name]["batch_size"], 
-                              discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
-                              log_frequency=self.hyperparam[table_name]["log_frequency"], 
-                              verbose=self.hyperparam[table_name]["verbose"], 
-                              epochs=self.hyperparam[table_name]["epochs"], 
-                              pac=self.hyperparam[table_name]["pac"], 
-                              cuda=self.hyperparam[table_name]["cuda"],
-                              plot_loss=self.hyperparam[table_name]["plot_loss"],
-                              seed=self.seed,
-                              field_transformers=self.hyperparam[table_name]["field_transformers"],
-                              anonymize_fields=self.hyperparam[table_name]["anonymize_fields"],
-                              constraints=self.hyperparam[table_name]["constraints"],
-                              table_metadata=self.hyperparam[table_name]["table_metadata"],
-                              rounding=self.hyperparam[table_name]["rounding"],
-                              min_value=self.hyperparam[table_name]["min_value"],
-                              max_value=self.hyperparam[table_name]["max_value"])
-                col_table = self.transformers[table_name]["columns"]
-                children = list(self.metadata.get_children(table_name))
-                temp_table = tables[table_name][[prim_key]+col_table].copy()
-                for child_name in children:
-                    '''
-                    Create the number of occurrence columns for the children of table_name.
-                    Those columns count the number of children of each row for table_name.
-                    they take part of the modeling and  will be usefull during sampling step for
-                    chosing the number of children to generate of each sampled row in table_name.
-                    '''
-                    foreign_keys = list(self.metadata.get_foreign_keys(table_name, child_name))
-                    for foreign_key in foreign_keys:
-                        temp_child = pd.DataFrame(tables[child_name].groupby([foreign_key])[foreign_key].count())
-                        temp_child.columns = [child_name+"_"+foreign_key+"_nb_occ"]
-                        temp_child[prim_key] = temp_child.index
-                        temp_child.index = range(len(temp_child))
-                        temp_table = temp_table.merge(temp_child, 
-                                                      on=[prim_key], 
-                                                      how='left', 
-                                                      indicator=True)
-                        temp_table = temp_table.drop(['_merge'], axis=1)
-                        mask = temp_table[child_name+"_"+foreign_key+"_nb_occ"].isna()
-                        temp_table.loc[mask, child_name+"_"+foreign_key+"_nb_occ"] = 0
-                        temp_table[child_name+"_"+foreign_key+"_nb_occ"] = temp_table[child_name+"_"+foreign_key+"_nb_occ"].astype(int)
-                        self.size_stats[table_name][child_name+"_"+foreign_key+"_nb_occ"] = {"min": np.min(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "max": np.max(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
-                                                                                            }
-                if self.hyperparam[table_name]["plot_loss"]==True:
-                    print("plot of table: "+table_name)
-
-                model.fit(temp_table)
-                self.models[table_name] = model
-                del temp_table
+            prim_key = self.metadata.get_primary_key(table_name)
+            col_table = self.transformers[table_name]["columns"]
+            children = table_children[table_name]
             
+            if len(self.metadata.get_parents(table_name)) == 0:
+                model = CTGAN(primary_key=prim_key, seed=self.seed, **self.hyperparam[table_name])
+                temp_table = tables[table_name].select([prim_key] + col_table).clone()
+                for child_name in children:
+                    temp_table = self.process_foreign_keys(tables, table_name, child_name, prim_key)
+                if self.hyperparam[table_name]["plot_loss"]:
+                    print("plot of table: " + table_name)
+                model.fit(temp_table)
             else:
-                prim_key = self.metadata.get_primary_key(table_name)
-                parents_trandformed = self.parents_input_add(table_name, tables)
-                model = PC_CTGAN(embedding_dim=self.hyperparam[table_name]["embedding_dim"], 
-                                 generator_dim=self.hyperparam[table_name]["generator_dim"], 
-                                 discriminator_dim=self.hyperparam[table_name]["discriminator_dim"],
-                                 generator_lr=self.hyperparam[table_name]["generator_lr"], 
-                                 generator_decay=self.hyperparam[table_name]["generator_decay"], 
-                                 discriminator_lr=self.hyperparam[table_name]["discriminator_lr"],
-                                 discriminator_decay=self.hyperparam[table_name]["discriminator_decay"], 
-                                 batch_size=self.hyperparam[table_name]["batch_size"], 
-                                 discriminator_steps=self.hyperparam[table_name]["discriminator_steps"],
-                                 log_frequency=self.hyperparam[table_name]["log_frequency"], 
-                                 verbose=self.hyperparam[table_name]["verbose"], 
-                                 epochs=self.hyperparam[table_name]["epochs"], 
-                                 pac=self.hyperparam[table_name]["pac"], 
-                                 cuda=self.hyperparam[table_name]["cuda"],
-                                 plot_loss=self.hyperparam[table_name]["plot_loss"],
-                                 seed=self.seed,
-                                 field_transformers=self.hyperparam[table_name]["field_transformers"],
-                                anonymize_fields=self.hyperparam[table_name]["anonymize_fields"],
-                                constraints=self.hyperparam[table_name]["constraints"],
-                                table_metadata=self.hyperparam[table_name]["table_metadata"],
-                                rounding=self.hyperparam[table_name]["rounding"],
-                                min_value=self.hyperparam[table_name]["min_value"],
-                                max_value=self.hyperparam[table_name]["max_value"])
-                    
-                col_table = self.transformers[table_name]["columns"]
-                children = list(self.metadata.get_children(table_name))
-                if len(children)>0:
-                    '''
-                    Create the number of occurrence columns for the children of table_name.
-                    Those columns count the number of children of each row for table_name.
-                    they take part of the modeling and  will be usefull during sampling step for
-                    chosing the number of children to generate of each sampled row in table_name.
-                    '''
-                    temp_table = tables[table_name][[prim_key]+col_table].copy()
+                parents_transformed = self.parents_input_add(table_name, tables)
+                hyperparams = {k: v for k, v in self.hyperparam[table_name].items() if k != 'grand_parent'}
+                model = PC_CTGAN(seed=self.seed, **hyperparams)
+                if children:
+                    temp_table = tables[table_name].select([prim_key] + col_table).clone()
                     for child_name in children:
-                        foreign_keys = list(self.metadata.get_foreign_keys(table_name, child_name))
-                        for foreign_key in foreign_keys:
-                            temp_child = pd.DataFrame(tables[child_name].groupby([foreign_key])[foreign_key].count())
-                            temp_child.columns = [child_name+"_"+foreign_key+"_nb_occ"]
-                            temp_child[prim_key] = temp_child.index
-                            temp_child.index = range(len(temp_child))
-                            temp_table = temp_table.merge(temp_child, 
-                                                          on=[prim_key], 
-                                                          how='left', 
-                                                          indicator=True)
-                            temp_table = temp_table.drop(['_merge'], axis=1)
-                            mask = temp_table[child_name+"_"+foreign_key+"_nb_occ"].isna()
-                            temp_table.loc[mask, child_name+"_"+foreign_key+"_nb_occ"] = 0
-                            temp_table[child_name+"_"+foreign_key+"_nb_occ"] = temp_table[child_name+"_"+foreign_key+"_nb_occ"].astype(int)
-                            self.size_stats[table_name][child_name+"_"+foreign_key+"_nb_occ"] = {"min": np.min(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "max": np.max(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "mean": np.mean(temp_table[child_name+"_"+foreign_key+"_nb_occ"]),
-                                                                                             "std": np.std(temp_table[child_name+"_"+foreign_key+"_nb_occ"])
-                                                                                            }
-                    temp_table = temp_table.drop([prim_key], axis=1)
+                        temp_table = self.process_foreign_keys(tables, table_name, child_name, prim_key)
+                    temp_table = temp_table.drop(prim_key)
                 else:
-                    temp_table = tables[table_name][col_table]
-                if self.hyperparam[table_name]["plot_loss"]==True:
-                    print("plot of table: "+table_name)
-
-                model.fit(temp_table, parents_trandformed)
-                self.models[table_name] = model
+                    temp_table = tables[table_name].select(col_table)
+                if self.hyperparam[table_name]["plot_loss"]:
+                    print("plot of table: " + table_name)
+                model.fit(temp_table, parents_transformed)
+            
+            self.models[table_name] = model
                 
     def generate_letter_id(self, size):
-        liste = []
-        letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
-                   'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
-                   's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
-        is_first = True
-        boolean =True
-        while boolean:
-            if is_first:
-                combin_letters = letters
-                liste += combin_letters
-                is_first = False
-            else:
-                combin_letters_list = list(itertools.product(combin_letters, letters))
-                combin_letters = []
-                for c in combin_letters_list:
-                    combin_letters += [c[0]+c[1]]
-                liste += combin_letters
-                
-            if len(liste) > size:
-                liste = liste[:size]
-                boolean = False
-        return liste
-            
+        import string
+        letters = string.ascii_lowercase
+        num_letters = len(letters)
         
+        if size <= num_letters:
+          return [letters[i] for i in range(size)]
+        else:
+          result = []
+          for i in range(size):
+              index = i
+              current_id = []
+              while index >= 0:
+                  current_id.append(letters[index % num_letters])
+                  index //= num_letters
+              result.append("".join(reversed(current_id)))
+          return result     
     
     def parent_child_sample_mini(self, child, sampled_data, table_transformed, f_key_frame):
         sampled_data[child] = self.models[child].sample(list(f_key_frame["_size_"]), table_transformed)
 
-        sampled_data[child] = sampled_data[child].merge(f_key_frame, 
-                                                          on=["Parent_index"],
-                                                          how='left', 
-                                                          indicator=True)
-        sampled_data[child] = sampled_data[child].drop(["_size_", "Parent_index", "_merge"], axis=1)
+        sampled_data[child] = sampled_data[child].join(f_key_frame, on="Parent_index", how="left")
+        sampled_data[child] = sampled_data[child].drop(["_size_", "Parent_index"])
 
         prim_key = self.metadata.get_primary_key(child)
         if prim_key:
-            if self.metadata.get_table_meta(child)['fields'][prim_key]['subtype']=='string':
-                sampled_data[child][prim_key] = self.generate_letter_id(len(sampled_data[child]))
-            elif self.metadata.get_table_meta(child)['fields'][prim_key]['subtype']=='integer':
-                sampled_data[child][prim_key] = range(1, len(sampled_data[child])+1)
-        
+            if self.metadata.get_table_meta(child)['fields'][prim_key]['subtype'] == 'string':
+                sampled_data[child] = sampled_data[child].with_column(pl.Series(prim_key, self.generate_letter_id(len(sampled_data[child]))))
+            elif self.metadata.get_table_meta(child)['fields'][prim_key]['subtype'] == 'integer':
+                sampled_data[child] = sampled_data[child].with_column(pl.Series(prim_key, range(1, len(sampled_data[child]) + 1)))         
     
     def granp_parent_transform_add(self, parent_name, table_transformed, f_key, f_key_frame, sampled_data, tables_transformed):
         grand_parents = list(self.metadata.get_parents(parent_name))
@@ -366,24 +271,23 @@ class RCTGAN:
             gp_foreign_keys = list(self.metadata.get_foreign_keys(grand_parent, parent_name))
             for gp_foreign_key in gp_foreign_keys:
                 start_var = len(table_transformed.columns)
-                temp_serie = pd.DataFrame(sampled_data[parent_name][gp_foreign_key])
-                temp_serie.columns = [gp_foreign_key]
-                temp_table = tables_transformed[grand_parent].copy()
-                temp_table.columns = ["var_"+str(start_var+i+1) for i in range(len(temp_table.columns))] 
+                temp_serie = pl.DataFrame({gp_foreign_key: sampled_data[parent_name][gp_foreign_key]})
+                temp_table = tables_transformed[grand_parent].clone()
+                temp_table.columns = ["var_" + str(start_var + i + 1) for i in range(len(temp_table.columns))]
                 
                 grand_parent_prim_key = self.metadata.get_primary_key(grand_parent)
-                temp_table[gp_foreign_key] = sampled_data[grand_parent][grand_parent_prim_key]
+                temp_table = temp_table.with_column(pl.Series(gp_foreign_key, sampled_data[grand_parent][grand_parent_prim_key]))
                 
-                temp_serie = temp_serie.merge(temp_table, on=[gp_foreign_key], how='left', indicator=True)
-                temp_serie = temp_serie.drop([gp_foreign_key, "_merge"], axis=1)
+                temp_serie = temp_serie.join(temp_table, on=gp_foreign_key, how='left')
+                temp_serie = temp_serie.drop(gp_foreign_key)
                 
                 parent_prim_key = self.metadata.get_primary_key(parent_name)
-                temp_serie[f_key] = sampled_data[parent_name][parent_prim_key]
-                table_transformed[f_key] = f_key_frame[f_key]
-                table_transformed = table_transformed.merge(temp_serie, on=[f_key], how='left', indicator=True)
-                table_transformed = table_transformed.drop([f_key, "_merge"], axis=1)
+                temp_serie = temp_serie.with_column(pl.Series(f_key, sampled_data[parent_name][parent_prim_key]))
+                table_transformed = table_transformed.with_column(pl.Series(f_key, f_key_frame[f_key]))
+                table_transformed = table_transformed.join(temp_serie, on=f_key, how='left')
+                table_transformed = table_transformed.drop(f_key)
         return table_transformed
-                
+
     def dupli_rows(self, data, size_list):
         if len(data)==len(size_list):
             df = data.copy()
@@ -397,8 +301,7 @@ class RCTGAN:
             df = index_prim_key.merge(df, on=['index_prim_key'], how='left')
             df = df.drop(['index_prim_key'], axis=1)
             return df
-        else:
-            return None
+        return None
 
 
     def parent_child_sample(self, child, sampled_data, tables_transformed):
@@ -477,9 +380,7 @@ class RCTGAN:
     def sample(self):
         sampled_data = {}
         tables_transformed = {}
-        if self.seed is not None:
-            random.seed(self.seed)
-            np.random.seed(self.seed)
+        
         for table_name in self.metadata.get_tables():
             if len(self.metadata.get_parents(table_name)) == 0:
                 prim_key = self.metadata.get_primary_key(table_name)

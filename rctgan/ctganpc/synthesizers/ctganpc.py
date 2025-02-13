@@ -4,10 +4,13 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import polars as pl
 from tqdm import tqdm
 import torch
 from packaging import version
 from torch import optim
+import torch.nn as nn
+from typing import Union
 from torch.nn import BatchNorm1d, Dropout, LeakyReLU, Linear, Module, ReLU, Sequential, functional
 
 from rctgan.ctganpc.data_sampler import DataSampler, pc_DataSampler
@@ -34,12 +37,8 @@ class Discriminator(Module):
 
     def calc_gradient_penalty(self, real_data, fake_data, device='cpu', pac=10, lambda_=10):
         """Compute the gradient penalty."""
-        alpha = torch.rand(real_data.size(0) // pac, 1, 1, device=device)
-        alpha = alpha.repeat(1, pac, real_data.size(1))
-        alpha = alpha.view(-1, real_data.size(1))
-
-        interpolates = alpha * real_data + ((1 - alpha) * fake_data)
-
+        alpha = torch.rand(real_data.size(0) // pac, 1, 1, device=device).repeat(1, pac, real_data.size(1)).view(-1, real_data.size(1))
+        interpolates = alpha * real_data + (1 - alpha) * fake_data
         disc_interpolates = self(interpolates)
 
         gradients = torch.autograd.grad(
@@ -49,7 +48,7 @@ class Discriminator(Module):
         )[0]
 
         gradients_view = gradients.view(-1, pac * real_data.size(1)).norm(2, dim=1) - 1
-        gradient_penalty = ((gradients_view) ** 2).mean() * lambda_
+        gradient_penalty = (gradients_view ** 2).mean() * lambda_
 
         return gradient_penalty
 
@@ -64,15 +63,16 @@ class Residual(Module):
 
     def __init__(self, i, o):
         super(Residual, self).__init__()
-        self.fc = Linear(i, o)
-        self.bn = BatchNorm1d(o)
-        self.relu = ReLU()
+        self.network = nn.Sequential(
+            nn.Linear(i, o),
+            nn.BatchNorm1d(o),
+            nn.ReLU()
+        )
+
 
     def forward(self, input_):
         """Apply the Residual layer to the `input_`."""
-        out = self.fc(input_)
-        out = self.bn(out)
-        out = self.relu(out)
+        out = self.network(input_)
         return torch.cat([out, input_], dim=1)
 
 
@@ -148,7 +148,7 @@ class CTGANSynthesizer(BaseSynthesizer):
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
                  plot_loss=False, seed=None):
-
+        super().__init__(cuda)
         assert batch_size % 2 == 0
 
         self._embedding_dim = embedding_dim
@@ -168,15 +168,6 @@ class CTGANSynthesizer(BaseSynthesizer):
         self.pac = pac
 
         self.plot_loss = plot_loss
-
-        if not cuda or not torch.cuda.is_available():
-            device = 'cpu'
-        elif isinstance(cuda, str):
-            device = cuda
-        else:
-            device = 'cuda'
-
-        self._device = torch.device(device)
 
         self._transformer = None
         self._data_sampler = None
@@ -573,7 +564,8 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, 
                  plot_loss=False, seed=None):
-
+        super().__init__(cuda)
+        
         assert batch_size % 2 == 0
 
         self._embedding_dim = embedding_dim
@@ -593,16 +585,6 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
         self.pac = pac
 
         self.plot_loss = plot_loss
-
-        if not cuda or not torch.cuda.is_available():
-            device = 'cpu'
-        elif isinstance(cuda, str):
-            device = cuda
-        else:
-            device = 'cuda'
-        
-
-        self._device = torch.device(device)
 
         self._transformer = None
         self._data_sampler = None
@@ -706,6 +688,8 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             for column in discrete_columns:
                 if column < 0 or column >= train_data.shape[1]:
                     invalid_columns.append(column)
+        elif isinstance(train_data, pl.DataFrame):
+            invalid_columns = set(discrete_columns) - set(train_data.columns)
         else:
             raise TypeError('``train_data`` should be either pd.DataFrame or np.array.')
 
@@ -721,7 +705,7 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             self.ax_d.legend()
 
     @random_state
-    def fit(self, train_data, parent_data, discrete_columns=(), epochs=None):
+    def fit(self, train_data: Union[pl.DataFrame, np.ndarray], parent_data, discrete_columns=(), epochs=None):
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:
@@ -744,6 +728,9 @@ class PC_CTGANSynthesizer(BaseSynthesizer):
             self.fig.set_figheight(5)
 
         self._validate_discrete_columns(train_data, discrete_columns)
+        
+        yo = train_data.head(25)
+        yo.write_csv('yo.csv')
 
         if epochs is None:
             epochs = self._epochs

@@ -1,9 +1,11 @@
 """BaseTransformer module."""
 import abc
 import inspect
-
+import numpy as np
 import pandas as pd
+import polars as pl
 
+from typing import Union, List, Optional, Dict
 
 class BaseTransformer:
     """Base class for all transformers.
@@ -51,15 +53,11 @@ class BaseTransformer:
         """
         return cls.INPUT_SDTYPE
 
-    def _add_prefix(self, dictionary):
+    def _add_prefix(self, dictionary: Optional[Dict[str, str]]) -> Dict[str, str]:
         if not dictionary:
             return {}
-
-        output = {}
-        for output_columns, output_sdtype in dictionary.items():
-            output[f'{self.column_prefix}.{output_columns}'] = output_sdtype
-
-        return output
+        
+        return {f'{self.column_prefix}.{output_columns}': output_sdtype for output_columns, output_sdtype in dictionary.items()}
 
     def get_output_sdtypes(self):
         """Return the output sdtypes produced by this transformer.
@@ -137,14 +135,15 @@ class BaseTransformer:
         self.columns = columns
 
     @staticmethod
-    def _get_columns_data(data, columns):
-        if len(columns) == 1:
+    def _get_columns_data(data: pl.DataFrame, columns: Union[str, List[str]]) -> pl.DataFrame:
+        if isinstance(columns, list) and len(columns) == 1:
             columns = columns[0]
-
-        return data[columns].copy()
-
+        return data.select(pl.col(columns)).clone()
+    
     @staticmethod
-    def _set_columns_data(data, columns_data, columns):
+    def _set_columns_data(data: pl.DataFrame, columns_data: Union[np.ndarray, pl.DataFrame, pl.Series], columns: Union[str, List[str]]):
+        
+        data = data.to_pandas()
         if columns_data is None:
             return
 
@@ -155,6 +154,8 @@ class BaseTransformer:
             data[columns[0]] = columns_data
         else:
             data[columns] = columns_data
+            
+        return pl.from_pandas(data)
 
     def _build_output_columns(self, data):
         self.column_prefix = '#'.join(self.columns)
@@ -200,7 +201,7 @@ class BaseTransformer:
         """
         raise NotImplementedError()
 
-    def fit(self, data, column):
+    def fit(self, data: pl.DataFrame, column: str):
         """Fit the transformer to a `column` of the `data`.
 
         Args:
@@ -216,7 +217,7 @@ class BaseTransformer:
 
         self._build_output_columns(data)
 
-    def _transform(self, columns_data):
+    def _transform(self, columns_data: Union[pl.DataFrame, pl.Series]) -> Union[pl.DataFrame, pl.Series]:
         """Transform the data.
 
         Args:
@@ -229,7 +230,7 @@ class BaseTransformer:
         """
         raise NotImplementedError()
 
-    def transform(self, data, drop=True):
+    def transform(self, data: pl.DataFrame, drop: bool = True) -> pl.DataFrame:
         """Transform the `self.columns` of the `data`.
 
         Args:
@@ -246,64 +247,64 @@ class BaseTransformer:
         if any(column not in data.columns for column in self.columns):
             return data
 
-        data = data.copy()
+        data = data.clone()
 
         columns_data = self._get_columns_data(data, self.columns)
         transformed_data = self._transform(columns_data)
 
-        self._set_columns_data(data, transformed_data, self.output_columns)
+        data = self._set_columns_data(data, transformed_data, self.output_columns)
         if drop:
-            data = data.drop(self.columns, axis=1)
+            data = data.drop(self.columns)
 
         return data
 
-    def fit_transform(self, data, column):
+    def fit_transform(self, data: pl.DataFrame, column: str) -> pl.DataFrame:
         """Fit the transformer to a `column` of the `data` and then transform it.
 
         Args:
-            data (pandas.DataFrame):
+            data (pl.DataFrame):
                 The entire table.
             column (str):
                 A column name.
 
         Returns:
-            pd.DataFrame:
+            pl.DataFrame:
                 The entire table, containing the transformed data.
         """
         self.fit(data, column)
         return self.transform(data)
 
-    def _reverse_transform(self, columns_data):
+    def _reverse_transform(self, columns_data: Union[pl.DataFrame, pl.Series]) -> Union[pl.DataFrame, pl.Series]:
         """Revert the transformations to the original values.
 
         Args:
-            columns_data (pandas.DataFrame or pandas.Series):
+            columns_data (pl.DataFrame or pl.Series):
                 Data to revert.
 
         Returns:
-            pandas.DataFrame or pandas.Series:
+            pl.DataFrame or pl.Series:
                 Reverted data.
         """
         raise NotImplementedError()
 
-    def reverse_transform(self, data, drop=True):
+    def reverse_transform(self, data: pl.DataFrame, drop: bool = True) -> pl.DataFrame:
         """Revert the transformations to the original values.
 
         Args:
-            data (pandas.DataFrame):
+            data (pl.DataFrame):
                 The entire table.
             drop (bool):
                 Whether or not to drop derived columns.
 
         Returns:
-            pandas.DataFrame:
+            pl.DataFrame:
                 The entire table, containing the reverted data.
         """
         # if `data` doesn't have the columns that were transformed, don't reverse_transform
         if any(column not in data.columns for column in self.output_columns):
             return data
 
-        data = data.copy()
+        data = data.clone()
 
         columns_data = self._get_columns_data(data, self.output_columns)
         reversed_data = self._reverse_transform(columns_data)

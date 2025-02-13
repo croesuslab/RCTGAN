@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import rdt
 from faker import Faker
 
@@ -120,28 +121,52 @@ class Table:
         'datetime': rdt.transformers.DatetimeTransformer(strip_constant=True),
     }
     _DTYPE_TRANSFORMERS = {
-        'i': 'integer',
-        'f': 'float',
-        'O': 'one_hot_encoding',
-        'b': 'boolean',
-        'M': 'datetime',
+        pl.Int8: 'integer',
+        pl.Int16: 'integer',
+        pl.Int32: 'integer',
+        pl.Int64: 'integer',
+        pl.Float32: 'float',
+        pl.Float64: 'float',
+        pl.Utf8: 'one_hot_encoding',
+        pl.Boolean: 'boolean',
+        pl.Date: 'datetime',
+        pl.Datetime: 'datetime'
     }
     _DTYPES_TO_TYPES = {
-        'i': {
+        pl.Int8: {
             'type': 'numerical',
             'subtype': 'integer',
         },
-        'f': {
+        pl.Int16: {
+            'type': 'numerical',
+            'subtype': 'integer',
+        },
+        pl.Int32: {
+            'type': 'numerical',
+            'subtype': 'integer',
+        },
+        pl.Int64: {
+            'type': 'numerical',
+            'subtype': 'integer',
+        },
+        pl.Float32: {
             'type': 'numerical',
             'subtype': 'float',
         },
-        'O': {
+        pl.Float64: {
+            'type': 'numerical',
+            'subtype': 'float',
+        },
+        pl.Utf8: {
             'type': 'categorical',
         },
-        'b': {
+        pl.Boolean: {
             'type': 'boolean',
         },
-        'M': {
+        pl.Date: {
+            'type': 'datetime',
+        },
+        pl.Datetime: {
             'type': 'datetime',
         }
     }
@@ -358,7 +383,7 @@ class Table:
 
         return dtypes
 
-    def _build_fields_metadata(self, data):
+    def _build_fields_metadata(self, data: pl.DataFrame):
         """Build all the fields metadata.
 
         Args:
@@ -373,6 +398,7 @@ class Table:
             ValueError:
                 If a column from the data analyzed is an unsupported data type
         """
+        #data = data.to_pandas()
         fields_metadata = dict()
         for field_name in self._field_names:
             if field_name not in data:
@@ -383,7 +409,8 @@ class Table:
                 dtype = self._get_field_dtype(field_name, field_meta)
             else:
                 dtype = data[field_name].dtype
-                field_template = self._DTYPES_TO_TYPES.get(dtype.kind)
+                #dtype = data.schema[field_name]
+                field_template = self._DTYPES_TO_TYPES.get(dtype)
                 if field_template is None:
                     msg = 'Unsupported dtype {} in column {}'.format(dtype, field_name)
                     raise ValueError(msg)
@@ -394,7 +421,7 @@ class Table:
             if field_transformer:
                 field_meta['transformer'] = field_transformer
             else:
-                field_meta['transformer'] = self._dtype_transformers.get(np.dtype(dtype).kind)
+                field_meta['transformer'] = self._dtype_transformers.get(dtype)
 
             anonymize_category = self._anonymize_fields.get(field_name)
             if anonymize_category:
@@ -448,7 +475,7 @@ class Table:
 
         return data
 
-    def _fit_hyper_transformer(self, data, extra_columns):
+    def _fit_hyper_transformer(self, data: pl.DataFrame, extra_columns):
         """Create and return a new ``rdt.HyperTransformer`` instance.
 
         First get the ``dtypes`` and then use them to build a transformer dictionary
@@ -483,6 +510,7 @@ class Table:
             transformers_dict[column] = rdt.transformers.NumericalTransformer()
 
         self._hyper_transformer = rdt.HyperTransformer(field_transformers=transformers_dict)
+        data = data.to_pandas()
         self._hyper_transformer.fit(data[list(transformers_dict.keys())])
 
     @staticmethod
@@ -629,7 +657,7 @@ class Table:
                 if not constraint.is_valid(data).all():
                     raise ConstraintsNotMetError('Data is not valid for the given constraints')
 
-    def transform(self, data, on_missing_column='error'):
+    def transform(self, data: pl.DataFrame, on_missing_column='error'):
         """Transform the given data.
 
         Args:
@@ -662,9 +690,10 @@ class Table:
 
         LOGGER.debug('Transforming table %s', self.name)
         try:
-            return self._hyper_transformer.transform(data)
+            data = data.to_pandas()
+            return pl.from_pandas(self._hyper_transformer.transform(data))
         except rdt.errors.NotFittedError:
-            return data
+            return pl.from_pandas(data)
 
     @classmethod
     def _make_ids(cls, field_metadata, length):

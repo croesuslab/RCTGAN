@@ -3,7 +3,7 @@
 from collections import namedtuple
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from joblib import Parallel, delayed
 from rctgan.rdt2.transformers import ClusterBasedNormalizer, OneHotEncoder
 
@@ -88,51 +88,53 @@ class DataTransformer(object):
         self.output_dimensions = 0
         self.dataframe = True
 
-        if not isinstance(raw_data, pd.DataFrame):
+        if not isinstance(raw_data, pl.DataFrame):
             self.dataframe = False
             # work around for RDT issue #328 Fitting with numerical column names fails
             discrete_columns = [str(column) for column in discrete_columns]
             column_names = [str(num) for num in range(raw_data.shape[1])]
-            raw_data = pd.DataFrame(raw_data, columns=column_names)
+            raw_data = pl.DataFrame({name: raw_data[:, i] for i, name in enumerate(column_names)})
 
-        self._column_raw_dtypes = raw_data.infer_objects().dtypes
+        self._column_raw_dtypes = raw_data.dtypes
         self._column_transform_info_list = []
         for column_name in raw_data.columns:
             if column_name in discrete_columns:
-                column_transform_info = self._fit_discrete(raw_data[[column_name]])
+                column_transform_info = self._fit_discrete(raw_data.select(column_name))
             else:
-                column_transform_info = self._fit_continuous(raw_data[[column_name]])
+                column_transform_info = self._fit_continuous(raw_data.select(column_name))
 
             self.output_info_list.append(column_transform_info.output_info)
             self.output_dimensions += column_transform_info.output_dimensions
             self._column_transform_info_list.append(column_transform_info)
 
-    def _transform_continuous(self, column_transform_info, data):
+    def _transform_continuous(self, column_transform_info, data: pl.DataFrame) -> np.ndarray:
         column_name = data.columns[0]
         flattened_column = data[column_name].to_numpy().flatten()
-        data = data.assign(**{column_name: flattened_column})
+        data = data.with_columns(pl.Series(column_name, flattened_column))
         gm = column_transform_info.transform
         transformed = gm.transform(data)
-
-        #  Converts the transformed data to the appropriate output format.
-        #  The first column (ending in '.normalized') stays the same,
-        #  but the lable encoded column (ending in '.component') is one hot encoded.
+    
+        # Converts the transformed data to the appropriate output format.
+        # The first column (ending in '.normalized') stays the same,
+        # but the label encoded column (ending in '.component') is one hot encoded.
         output = np.zeros((len(transformed), column_transform_info.output_dimensions))
         output[:, 0] = transformed[f'{column_name}.normalized'].to_numpy()
         index = transformed[f'{column_name}.component'].to_numpy().astype(int)
         output[np.arange(index.size), index + 1] = 1.0
-
+    
         return output
 
     def _transform_discrete(self, column_transform_info, data):
         ohe = column_transform_info.transform
         return ohe.transform(data).to_numpy()
 
-    def _synchronous_transform(self, raw_data, column_transform_info_list):
+    def _synchronous_transform(self, raw_data: pl.DataFrame, column_transform_info_list):
         """Take a Pandas DataFrame and transform columns synchronous.
 
         Outputs a list with Numpy arrays.
         """
+        yo = raw_data.head(25)
+        yo.write_csv('yo.csv')
         column_data_list = []
         for column_transform_info in column_transform_info_list:
             column_name = column_transform_info.column_name
@@ -164,13 +166,13 @@ class DataTransformer(object):
 
     def transform(self, raw_data):
         """Take raw data and output a matrix data."""
-        if not isinstance(raw_data, pd.DataFrame):
+        if not isinstance(raw_data, pl.DataFrame):
             column_names = [str(num) for num in range(raw_data.shape[1])]
-            raw_data = pd.DataFrame(raw_data, columns=column_names)
+            raw_data = pl.DataFrame({name: raw_data[:, i] for i, name in enumerate(column_names)})
 
         # Only use parallelization with larger data sizes.
         # Otherwise, the transformation will be slower.
-        if raw_data.shape[0] < 500:
+        if raw_data.shape[0] < 50000:
             column_data_list = self._synchronous_transform(
                 raw_data,
                 self._column_transform_info_list
@@ -185,24 +187,26 @@ class DataTransformer(object):
 
     def _inverse_transform_continuous(self, column_transform_info, column_data, sigmas, st):
         gm = column_transform_info.transform
-        data = pd.DataFrame(column_data[:, :2], columns=list(gm.get_output_sdtypes()))
-        data[data.columns[1]] = np.argmax(column_data[:, 1:], axis=1)
+        data = pl.DataFrame({
+            gm.get_output_sdtypes()[0]: column_data[:, 0],
+            gm.get_output_sdtypes()[1]: np.argmax(column_data[:, 1:], axis=1)
+        })
         if sigmas is not None:
-            selected_normalized_value = np.random.normal(data.iloc[:, 0], sigmas[st])
-            data.iloc[:, 0] = selected_normalized_value
-
+            selected_normalized_value = np.random.normal(data.select(pl.col(gm.get_output_sdtypes()[0])).to_numpy(), sigmas[st])
+            data = data.with_columns(pl.Series(gm.get_output_sdtypes()[0], selected_normalized_value))
+    
         return gm.reverse_transform(data)
 
     def _inverse_transform_discrete(self, column_transform_info, column_data):
         ohe = column_transform_info.transform
-        data = pd.DataFrame(column_data, columns=list(ohe.get_output_sdtypes()))
-        return ohe.reverse_transform(data)[column_transform_info.column_name]
+        data = pl.DataFrame(column_data, schema={name: pl.Float64 for name in ohe.get_output_sdtypes()})
+        return ohe.reverse_transform(data).select(column_transform_info.column_name).to_series()
 
     def inverse_transform(self, data, sigmas=None):
         """Take matrix data and output raw data.
-
+    
         Output uses the same type as input to the transform function.
-        Either np array or pd dataframe.
+        Either np array or pl DataFrame.
         """
         st = 0
         recovered_column_data_list = []
@@ -216,17 +220,19 @@ class DataTransformer(object):
             else:
                 recovered_column_data = self._inverse_transform_discrete(
                     column_transform_info, column_data)
-
+    
             recovered_column_data_list.append(recovered_column_data)
             column_names.append(column_transform_info.column_name)
             st += dim
-
+    
         recovered_data = np.column_stack(recovered_column_data_list)
-        recovered_data = (pd.DataFrame(recovered_data, columns=column_names)
-                          .astype(self._column_raw_dtypes))
+        recovered_data = pl.DataFrame(recovered_data, schema={name: pl.Float64 for name in column_names})
+        recovered_data = recovered_data.with_columns([
+            recovered_data[col].cast(dtype) for col, dtype in zip(column_names, self._column_raw_dtypes)
+        ])
         if not self.dataframe:
             recovered_data = recovered_data.to_numpy()
-
+    
         return recovered_data
 
     def convert_column_name_value_to_id(self, column_name, value):
@@ -238,18 +244,18 @@ class DataTransformer(object):
                 break
             if column_transform_info.column_type == 'discrete':
                 discrete_counter += 1
-
+    
             column_id += 1
-
+    
         else:
             raise ValueError(f"The column_name `{column_name}` doesn't exist in the data.")
-
+    
         ohe = column_transform_info.transform
-        data = pd.DataFrame([value], columns=[column_transform_info.column_name])
+        data = pl.DataFrame({column_transform_info.column_name: [value]})
         one_hot = ohe.transform(data).to_numpy()[0]
         if sum(one_hot) == 0:
             raise ValueError(f"The value `{value}` doesn't exist in the column `{column_name}`.")
-
+    
         return {
             'discrete_column_id': discrete_counter,
             'column_id': column_id,

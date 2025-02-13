@@ -62,6 +62,13 @@ class BaseSynthesizer:
     """
 
     random_states = None
+    
+    def __init__(self, cuda=True):
+        device = 'cuda' if cuda and torch.cuda.is_available() else 'cpu'
+        if isinstance(cuda, str):
+            device = cuda
+
+        self._device = torch.device(device)
 
     def save(self, path):
         """Save the model in the passed `path`."""

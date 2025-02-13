@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import time
 import os
 import pickle
@@ -10,26 +10,26 @@ from rctgan.relational import RCTGAN
 root_path = os.path.dirname(__file__)
 
 def load_data(pickle_file, sample_fraction=0.1):
-    if os.path.exists(os.path.join(root_path,pickle_file)):
-        with open(os.path.join(root_path,pickle_file), 'rb') as file:
+    if os.path.exists(os.path.join(root_path, pickle_file)):
+        with open(os.path.join(root_path, pickle_file), 'rb') as file:
             tables = pickle.load(file)
     else:
-        df_atom = pd.read_csv(os.path.join(root_path,'atom.csv'))
-        df_bond = pd.read_csv(os.path.join(root_path,'bond.csv'))
-        df_molecule = pd.read_csv(os.path.join(root_path,'molecule.csv'))
-
-        df_molecule_sampled = df_molecule.sample(frac=sample_fraction, random_state=42)
-        df_atom_sampled = df_atom[df_atom['molecule_id'].isin(df_molecule_sampled['molecule_id'])]
-        df_bond_sampled = df_bond[
-            (df_bond['atom_id'].isin(df_atom_sampled['atom_id'])) |
-            (df_bond['atom_id2'].isin(df_atom_sampled['atom_id']))
-        ]
+        df_atom = pl.read_csv(os.path.join(root_path, 'atom.csv'))
+        df_bond = pl.read_csv(os.path.join(root_path, 'bond.csv'))
+        df_molecule = pl.read_csv(os.path.join(root_path, 'molecule.csv'))
+        
+        df_molecule_sampled = df_molecule.sample(fraction=sample_fraction, seed=42)
+        df_atom_sampled = df_atom.filter(pl.col('molecule_id').is_in(df_molecule_sampled['molecule_id']))
+        df_bond_sampled = df_bond.filter(
+            (pl.col('atom_id').is_in(df_atom_sampled['atom_id'])) |
+            (pl.col('atom_id2').is_in(df_atom_sampled['atom_id']))
+        )
 
         tables_name = ['atom', 'bond', 'molecule']
         data_frames = [df_atom_sampled, df_bond_sampled, df_molecule_sampled]
         tables = dict(zip(tables_name, data_frames))
 
-        with open(os.path.join(root_path,pickle_file), 'wb') as file:
+        with open(os.path.join(root_path, pickle_file), 'wb') as file:
             pickle.dump(tables, file)
     
     return tables
@@ -37,7 +37,7 @@ def load_data(pickle_file, sample_fraction=0.1):
 def get_metadata(tables):
     metadata = Metadata()
 
-    with open(os.path.join(root_path,'fields.yml'), 'r') as file:
+    with open(os.path.join(root_path, 'fields.yml'), 'r') as file:
         metadata_fields = yaml.safe_load(file)
 
     table_info = [
@@ -109,20 +109,20 @@ def main():
     end_time = time.time()
     execution_time = end_time - start_time
 
-    if os.path.exists(args.csv_file):
-        results_df = pd.read_csv(args.csv_file)
+    if os.path.exists(os.path.join(root_path, args.csv_file)):
+        results_df = pl.read_csv(os.path.join(root_path, args.csv_file))
     else:
-        results_df = pd.DataFrame(columns=['version', 'execution_time', 'lines_of_code'])
+        results_df = pl.DataFrame(columns=['version', 'execution_time', 'lines_of_code'])
 
     if not ((results_df['execution_time'] == execution_time) & (results_df['lines_of_code'] == lines_of_code)).any():
-        new_entry = {
+        new_entry = pl.DataFrame([{
             'version': results_df.shape[0] + 1,
             'execution_time': execution_time,
             'lines_of_code': lines_of_code,
             'epochs': args.epochs
-        }
-        results_df = results_df.append(new_entry, ignore_index=True)
-        results_df.to_csv(os.path.join(root_path,args.csv_file), index=False)
+        }])
+        results_df = pl.concat([results_df, new_entry])
+        results_df.write_csv(os.path.join(root_path, args.csv_file))
 
     print(results_df)
 

@@ -7,6 +7,7 @@ from rctgan.metadata import Table
 from rctgan.tabular.base import BaseTabularModel
 import numpy as np
 import pandas as pd
+import polars as pl
 import math
 import os
 import uuid
@@ -199,7 +200,7 @@ class CTGAN(CTGANModel):
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
-                 rounding='auto', min_value='auto', max_value='auto'):
+                 rounding='auto', min_value='auto', max_value='auto', **kawrgs):
         super().__init__(
             field_names=field_names,
             primary_key=primary_key,
@@ -253,7 +254,7 @@ class PC_CTGANModel(BaseTabularModel):
     def _build_model(self):
         return self._MODEL_CLASS(**self._model_kwargs)
 
-    def _fit(self, table_data, parent_data):
+    def _fit(self, table_data: pl.DataFrame, parent_data: pl.DataFrame):
         """Fit the model to the table.
 
         Args:
@@ -271,20 +272,17 @@ class PC_CTGANModel(BaseTabularModel):
                     categoricals.append(field)
 
             else:
-                field_data = table_data[field].dropna()
+                field_data = table_data[field].drop_nans()
                 if set(field_data.unique()) == {0.0, 1.0}:
                     # booleans encoded as float values must be modeled as bool
-                    field_data = field_data.astype(bool)
+                    field_data = field_data.cast(pl.Boolean)
 
-                dtype = field_data.infer_objects().dtype
-                try:
-                    kind = np.dtype(dtype).kind
-                except TypeError:
-                    # probably category
-                    kind = 'O'
-                if kind in ['O', 'b']:
+                dtype = field_data.dtype
+                kind = dtype if dtype in [pl.Utf8, pl.Boolean] else 'O'
+                if kind in [pl.Utf8, pl.Boolean]:
                     categoricals.append(field)
-        self._type_dict = dict(table_data.dtypes)
+                
+        self._type_dict = {col: dtype for col, dtype in zip(table_data.columns, table_data.dtypes)}
         
         self._model.fit(
             table_data,
@@ -292,7 +290,7 @@ class PC_CTGANModel(BaseTabularModel):
             discrete_columns=categoricals
         )
         
-    def fit(self, data, parent_data, field_names_pc=None, field_types_pc=None, field_transformers_pc=None,
+    def fit(self, data: pl.DataFrame, parent_data: pl.DataFrame, field_names_pc=None, field_types_pc=None, field_transformers_pc=None,
                  anonymize_fields_pc=None, primary_key_pc=None, constraints_pc=None, table_metadata_pc=None,
                  rounding_pc='auto', min_value_pc='auto', max_value_pc='auto'):
         if isinstance(data, pd.DataFrame):
@@ -453,7 +451,7 @@ class PC_CTGAN(PC_CTGANModel):
                  generator_lr=2e-4, generator_decay=1e-6, discriminator_lr=2e-4,
                  discriminator_decay=1e-6, batch_size=500, discriminator_steps=1,
                  log_frequency=True, verbose=False, epochs=300, pac=10, cuda=True, plot_loss=False, seed=None,
-                 rounding='auto', min_value='auto', max_value='auto'):
+                 rounding='auto', min_value='auto', max_value='auto', **kwargs):
         super().__init__(
             field_names=field_names,
             primary_key=primary_key,

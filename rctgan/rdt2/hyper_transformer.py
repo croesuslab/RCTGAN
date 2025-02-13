@@ -6,6 +6,7 @@ from collections import defaultdict
 from copy import deepcopy
 
 import yaml
+import polars as pl
 from rctgan.utils.dataclass import Config
 from rctgan.rdt2.errors import Error, NotFittedError
 from rctgan.rdt2.transformers import (
@@ -698,7 +699,7 @@ class HyperTransformer:
         self._modified_config = False
         self._sort_output_columns()
 
-    def _transform(self, data, prevent_subset):
+    def _transform(self, data: pl.DataFrame, prevent_subset: bool):
         self._validate_config_exists()
         if not self._fitted or self._modified_config:
             raise NotFittedError(self._NOT_FIT_MESSAGE)
@@ -720,12 +721,12 @@ class HyperTransformer:
                 f"{unknown_columns}. Use 'get_config()' to see the acceptable column names."
             )
 
-        data = data.copy()
+        data = data.clone()
         for transformer in self._transformers_sequence:
             data = transformer.transform(data, drop=False)
 
         transformed_columns = self._subset(self._output_columns, data.columns)
-        return data.reindex(columns=transformed_columns)
+        return data.select(transformed_columns)
 
     def transform_subset(self, data):
         """Transform a subset of the fitted data's columns.
