@@ -3,7 +3,7 @@
 import logging
 
 import numpy as np
-import pandas as pd
+import polars as pl
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,11 +42,11 @@ class NullTransformer():
         """
         return self._model_missing_values
 
-    def _get_missing_value_replacement(self, data):
+    def _get_missing_value_replacement(self, data: pl.Series) -> float:
         """Get the fill value to use for the given data.
 
         Args:
-            data (pd.Series):
+            data (pl.Series):
                 The data that is being transformed.
 
         Return:
@@ -57,23 +57,23 @@ class NullTransformer():
             return None
 
         if self._missing_value_replacement == 'mean':
-            return data.mean()
+            return data.drop_nans().mean()
 
         if self._missing_value_replacement == 'mode':
-            return data.mode(dropna=True)[0]
+            return data.drop_nans().mode().sort()[0]
 
         return self._missing_value_replacement
-
-    def fit(self, data):
+    
+    def fit(self, data: pl.Series):
         """Fit the transformer to the data.
 
         Evaluate if the transformer has to create the null column or not.
 
         Args:
-            data (pandas.Series):
+            data (pl.Series):
                 Data to transform.
         """
-        null_values = data.isna().to_numpy()
+        null_values = np.isnan(data.to_numpy())
         self.nulls = null_values.any()
 
         self._missing_value_replacement = self._get_missing_value_replacement(data)
@@ -87,29 +87,30 @@ class NullTransformer():
 
         if not self._model_missing_values:
             self._null_percentage = null_values.sum() / len(data)
+    
 
-    def transform(self, data):
+    def transform(self, data: pl.Series) -> np.ndarray:
         """Replace null values with the indicated ``missing_value_replacement``.
 
         If required, create the null indicator column.
 
         Args:
-            data (pandas.Series or numpy.ndarray):
+            data (pl.Series or np.ndarray):
                 Data to transform.
 
         Returns:
-            numpy.ndarray
+            np.ndarray
         """
-        isna = data.isna()
-        if isna.any() and self._missing_value_replacement is not None:
-            data = data.fillna(self._missing_value_replacement)
+        isna = data.is_nan().cast(pl.Float64)     
+        if self._missing_value_replacement is not None:
+            data = data.fill_nan(self._missing_value_replacement)
 
         if self._model_missing_values:
-            return pd.concat([data, isna.astype(np.float64)], axis=1).to_numpy()
+            return np.stack([data.to_numpy(), isna.to_numpy()], axis=1)
 
         return data.to_numpy()
 
-    def reverse_transform(self, data):
+    def reverse_transform(self, data: np.ndarray) -> pl.Series:
         """Restore null values to the data.
 
         If a null indicator column was created during fit, use it as a reference.
@@ -117,11 +118,11 @@ class NullTransformer():
         that will be replaced is the percentage of null values seen in the fitted data.
 
         Args:
-            data (numpy.ndarray):
+            data (np.ndarray):
                 Data to transform.
 
         Returns:
-            pandas.Series
+            pl.Series
         """
         data = data.copy()
         if self._model_missing_values:
@@ -133,9 +134,9 @@ class NullTransformer():
         elif self.nulls:
             isna = np.random.random((len(data), )) < self._null_percentage
 
-        data = pd.Series(data)
+        data = pl.Series(data)
 
         if self.nulls and isna.any():
-            data.loc[isna] = np.nan
+            data = data.scatter(np.where(isna)[0], np.nan)
 
         return data
