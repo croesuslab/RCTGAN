@@ -670,7 +670,7 @@ class Table:
     def _make_ids(cls, field_metadata, length):
         field_subtype = field_metadata.get('subtype', 'integer')
         if field_subtype == 'string':
-            regex = field_metadata.get('regex', '[a-zA-Z]+')
+            regex = field_metadata.get('regex', '[ABCDEFGHJKLMOPQRSTUWYZ]+')
             generator, max_size = strings_from_regex(regex)
             if max_size < length:
                 raise ValueError((

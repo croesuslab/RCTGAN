@@ -343,8 +343,9 @@ class RCTGAN:
                 
     def generate_letter_id(self, size):
         liste = []
+        # removed n as nan ids were being generated
         letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 
-                   'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+                   'j', 'k', 'l', 'm', 'o', 'p', 'q', 'r',
                    's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
         is_first = True
         boolean =True
@@ -439,7 +440,9 @@ class RCTGAN:
                             all_parents_sampled = False
                     
             if all_parents_sampled == False:
-                break
+                # If all parents were not sampled yet, exit the function
+                # the table will be sampled when all its parents are sampled.
+                return
             
             if parent_name not in tables_transformed.keys():
                 table_transformed = self.transform(parent_name, sampled_data[parent_name])

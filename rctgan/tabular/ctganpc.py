@@ -249,6 +249,7 @@ class PC_CTGANModel(BaseTabularModel):
     _metadata_pc = None
     
     _type_dict = {}
+    _model = None
 
     def _build_model(self):
         return self._MODEL_CLASS(**self._model_kwargs)
@@ -383,6 +384,24 @@ class PC_CTGANModel(BaseTabularModel):
     
     def _sample(self, sizes, parent, conditions=None):
         if conditions is None:
+            if self._model is None:
+                def dupli_rows(data, size_list):
+                    df = data.copy()
+                    df['index_prim_key'] = range(len(df))
+                    size_list_2 = []
+                    for k in range(len(size_list)):
+                        s = size_list[k]
+                        size_list_2 += [k]*s
+                    index_prim_key = pd.DataFrame(size_list_2, columns=['index_prim_key'])
+                    df = index_prim_key.merge(df, on=['index_prim_key'], how='left')
+                    df = df.drop(['index_prim_key'], axis=1)
+                    return df
+                data = pd.DataFrame(np.zeros((np.sum(sizes), 0)))
+                if sum(sizes)==len(sizes):
+                    data["Parent_index"] = range(len(data))
+                else:
+                    data["Parent_index"] = dupli_rows(pd.DataFrame(parent.index, columns=['__index__']), sizes)['__index__']
+                return data
             return self._model.sample(sizes, parent)
 
         raise NotImplementedError(f"{self._MODEL_CLASS} doesn't support conditional sampling.")
